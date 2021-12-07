@@ -7,7 +7,7 @@ Calculate local panel forces in the body frame.
 """
 @inline function near_field_forces!(props, surfaces, wakes, ref, fs, Γ;
     dΓdt, additional_velocity, Vh, Vv, symmetric, nwake, surface_id,
-    wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
+    wake_finite_core, wake_shedding_locations, trailing_vortices, xhat, prandtl_glauert)
 
     # number of surfaces
     nsurf = length(surfaces)
@@ -119,6 +119,13 @@ Calculate local panel forces in the body frame.
 
             end
 
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Vi)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbi *= PG
+            end
+
             # --- Calculate forces on the left bound vortex --- #
 
             # bound vortex location
@@ -150,6 +157,13 @@ Calculate local panel forces in the body frame.
             Δs = left_vector(receiving[I])
             Fbli = RHO*Γli*cross(Veff, Δs)
 
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Veff)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbli *= PG
+            end
+
             # --- Calculate forces on the right bound vortex --- #
 
             rc = right_center(receiving[I])
@@ -180,6 +194,13 @@ Calculate local panel forces in the body frame.
             Δs = right_vector(receiving[I])
             Fbri = RHO*Γri*cross(Veff, Δs)
 
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Veff)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbri *= PG
+            end
+
             # store panel circulation, velocity, and forces
             q = 1/2*RHO*ref.V^2
 
@@ -206,7 +227,7 @@ near_field_forces_derivatives!
 
 @inline function near_field_forces_derivatives!(props, dprops, surfaces, wakes,
     ref, fs, Γ, dΓ; dΓdt, additional_velocity, Vh, Vv, symmetric, nwake,
-    surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
+    surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat, prandtl_glauert)
 
     # unpack derivatives
     props_a, props_b, props_p, props_q, props_r = dprops
@@ -366,6 +387,13 @@ near_field_forces_derivatives!
 
             end
 
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Vi)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbi *= PG
+            end
+
             # --- Calculate forces for the left bound vortex --- #
 
             rc = left_center(receiving[I])
@@ -416,6 +444,13 @@ near_field_forces_derivatives!
             Fbli_q = RHO*(Γli_q*tmp + Γli*cross(Veff_q, Δs))
             Fbli_r = RHO*(Γli_r*tmp + Γli*cross(Veff_r, Δs))
 
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Veff)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbli *= PG
+            end
+
             # --- Calculate forces on the right bound vortex --- #
 
             rc = right_center(receiving[I])
@@ -465,6 +500,13 @@ near_field_forces_derivatives!
             Fbri_p = RHO*(Γri_p*tmp + Γri*cross(Veff_p, Δs))
             Fbri_q = RHO*(Γri_q*tmp + Γri*cross(Veff_q, Δs))
             Fbri_r = RHO*(Γri_r*tmp + Γri*cross(Veff_r, Δs))
+
+            if prandtl_glauert
+                # Prandtl-Glauert compressibility correction:
+                mach = norm(Veff)/fs.speedofsound
+                PG = 1/sqrt(1 - mach^2)
+                Fbri *= PG
+            end
 
             # store panel circulation, velocity, and forces
             q = 1/2*RHO*ref.V^2

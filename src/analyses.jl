@@ -47,7 +47,8 @@ Perform a steady vortex lattice method analysis.  Return an object of type
  - `near_field_analysis`: Flag indicating whether a near field analysis should be
     performed to obtain panel velocities, circulation, and forces. Defaults to `true`.
  - `derivatives`: Flag indicating whether the derivatives with respect
-    to the freestream variables should be calculated. Defaults to `true`.
+    to the freestream variables should be calculated. Defaults to `true`. 
+ - `prandtl_glauert`: Flag indicating whether the Prandtl-Glauert compressibility correction should be used. Defaults to `false`.
 """
 function steady_analysis(surfaces, reference, freestream; kwargs...)
 
@@ -75,7 +76,8 @@ function steady_analysis!(system, surfaces, ref, fs;
     fcore = (c, Δs) -> 1e-3,
     calculate_influence_matrix = true,
     near_field_analysis = true,
-    derivatives = true)
+    derivatives = true,
+    prandtl_glauert = false)
 
     # number of surfaces
     nsurf = length(surfaces)
@@ -113,6 +115,7 @@ function steady_analysis!(system, surfaces, ref, fs;
     system.wake_finite_core .= wake_finite_core
     system.trailing_vortices .= trailing_vortices
     system.xhat[] = xhat
+    system.prandtl_glauert[] = prandtl_glauert
 
     # unpack variables stored in `system`
     surfaces = system.surfaces
@@ -181,7 +184,8 @@ function steady_analysis!(system, surfaces, ref, fs;
                 wake_finite_core = wake_finite_core,
                 wake_shedding_locations = nothing, # shedding location at trailing edge
                 trailing_vortices = trailing_vortices,
-                xhat = xhat)
+                xhat = xhat,
+                prandtl_glauert = prandtl_glauert)
         else
             near_field_forces!(properties, surfaces, wakes, ref, fs, Γ;
                 dΓdt = nothing, # no unsteady forces
@@ -194,7 +198,8 @@ function steady_analysis!(system, surfaces, ref, fs;
                 wake_finite_core = wake_finite_core,
                 wake_shedding_locations = nothing, # shedding location at trailing edge
                 trailing_vortices = trailing_vortices,
-                xhat = xhat)
+                xhat = xhat,
+                prandtl_glauert = prandtl_glauert)
         end
     end
 
@@ -259,6 +264,8 @@ step.
  - `derivatives`: Flag indicating whether the derivatives with respect to the
     freestream variables should be calculated for the final time step. Defaults
     to `true`.
+ - `prandtl_glauert': Flag indicating whether the Prandtl-Glauert
+    compressibility correction should be used. Defaults to `false`.
 """
 unsteady_analysis
 
@@ -301,7 +308,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     save = 1:length(dt),
     calculate_influence_matrix = true,
     near_field_analysis = true,
-    derivatives = true)
+    derivatives = true,
+    prandtl_glauert = false)
 
     # float number type
     TF = eltype(system)
@@ -337,6 +345,7 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     system.surface_id .= surface_id
     system.wake_finite_core .= wake_finite_core
     system.trailing_vortices .= false
+    system.prandtl_glauert[] = prandtl_glauert
 
     # check if existing wake panel storage is sufficient, replace if necessary
     for isurf = 1:nsurf
@@ -406,7 +415,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 eta = 0.25,
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
                 near_field_analysis = it in save || (last_step && near_field_analysis),
-                derivatives = last_step && derivatives)
+                derivatives = last_step && derivatives,
+                prandtl_glauert = prandtl_glauert)
         else
             propagate_system!(system, fs[it], dt[it];
                 additional_velocity,
@@ -415,7 +425,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 eta = 0.25,
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
                 near_field_analysis = it in save || (last_step && near_field_analysis),
-                derivatives = last_step && derivatives)
+                derivatives = last_step && derivatives,
+                prandtl_glauert = prandtl_glauert)
         end
 
         # increment wake panel counter for each surface
@@ -469,6 +480,8 @@ unsteady vortex lattice method system of equations.
     performed to obtain panel velocities, circulation, and forces.
  - `derivatives`: Flag indicating whether the derivatives with respect to the
     freestream variables should be calculated.
+ - `prandtl_glauert`: Flag indicating whether the Prandtl-Glauert
+    compressibility correction should be used.
 """
 propagate_system!
 
@@ -484,7 +497,8 @@ function propagate_system!(system, surfaces, fs, dt;
     eta,
     calculate_influence_matrix,
     near_field_analysis,
-    derivatives)
+    derivatives,
+    prandtl_glauert)
 
     # NOTE: Each step models the transition from `t = t[it]` to `t = [it+1]`
     # (e.g. the first step models from `t = 0` to `t = dt`).  Properties are
@@ -520,6 +534,7 @@ function propagate_system!(system, surfaces, fs, dt;
     Vh = system.Vh
     Vv = system.Vv
     Vte = system.Vte
+    prandtl_glauert = system.prandtl_glauert[]
 
     # check if the surfaces are moving
     surface_motion = !isnothing(surfaces)
@@ -617,12 +632,12 @@ function propagate_system!(system, surfaces, fs, dt;
                 current_surfaces, wakes, ref, fs, Γ, dΓ; dΓdt,
                 additional_velocity, Vh, Vv, symmetric, nwake,
                 surface_id, wake_finite_core, wake_shedding_locations,
-                trailing_vortices, xhat)
+                trailing_vortices, xhat, prandtl_glauert)
         else
             near_field_forces!(properties, current_surfaces, wakes,
                 ref, fs, Γ; dΓdt, additional_velocity, Vh, Vv,
                 symmetric, nwake, surface_id, wake_finite_core,
-                wake_shedding_locations, trailing_vortices, xhat)
+                wake_shedding_locations, trailing_vortices, xhat, prandtl_glauert)
         end
 
         # save flag indicating that a near-field analysis has been performed

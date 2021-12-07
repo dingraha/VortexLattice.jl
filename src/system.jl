@@ -103,6 +103,7 @@ struct System{TF}
     Vv::Vector{Matrix{SVector{3, TF}}}
     Vte::Vector{Vector{SVector{3, TF}}}
     dΓdt::Vector{TF}
+    prandtl_glauert::Array{Bool, 0}
 end
 
 @inline Base.eltype(::Type{System{TF}}) where TF = TF
@@ -128,6 +129,7 @@ variables
 # Keyword Arguments:
  - `nw`: Number of chordwise wake panels to initialize for each surface. Defaults to
     zero wake panels for each surface.
+ - 'prandtl_glauert`: Flag indicating whether the Prandtl-Glauert compressibility correction should be used. Defaults to false.
 """
 System(args...; kwargs...)
 
@@ -177,8 +179,9 @@ variables
 # Keyword Arguments
  - `nw`: Number of chordwise wake panels for each surface. Defaults to zero wake
     panels on each surface
+ - `prandtl_glauert`: Flag for enabling the Prandtl-Glauert compressibility correction (defaults to `false`)
 """
-function System(TF::Type, nc, ns; nw = zero(nc))
+function System(TF::Type, nc, ns; nw = zero(nc), prandtl_glauert = false)
 
     @assert length(nc) == length(ns) == length(nw)
 
@@ -221,7 +224,7 @@ function System(TF::Type, nc, ns; nw = zero(nc))
         reference, freestream, symmetric, nwake, surface_id, wake_finite_core,
         trailing_vortices, xhat, near_field_analysis, derivatives,
         dw, dΓ, dproperties, wake_shedding_locations, previous_surfaces, Vcp, Vh,
-        Vv, Vte, dΓdt)
+        Vv, Vte, dΓdt, fill(prandtl_glauert))
 end
 
 """

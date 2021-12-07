@@ -8,17 +8,19 @@ Defines the freestream and rotational velocity properties.
 - `alpha`: angle of attack (rad)
 - `beta`: sideslip angle (rad)
 - `Omega`: rotation vector (p, q, r) of the body frame about the reference center
+- `speedofsound`: Freestream speed of sound
 """
 struct Freestream{TF}
     Vinf::TF
     alpha::TF
     beta::TF
     Omega::SVector{3, TF}
+    speedofsound::TF
 end
 
-function Freestream(Vinf, alpha, beta, Omega)
-    TF = promote_type(typeof(Vinf), typeof(alpha), typeof(beta), eltype(Omega))
-    return Freestream{TF}(Vinf, alpha, beta, Omega)
+function Freestream(Vinf, alpha, beta, Omega, speedofsound)
+    TF = promote_type(typeof(Vinf), typeof(alpha), typeof(beta), eltype(Omega), typeof(speedofsound))
+    return Freestream{TF}(Vinf, alpha, beta, Omega, speedofsound)
 end
 
 Base.eltype(::Type{Freestream{TF}}) where TF = TF
@@ -327,11 +329,12 @@ at a collection of time steps.
  - `phi0 = 0`: Roll angle for initial time step
  - `theta0 = 0`: Pitch angle for initial time step
  - `psi0 = 0`: Yaw angle for initial time step
+ - `speedofsound = 343.0`: Ambient speed of sound
 """
 function trajectory_to_freestream(dt;
     Xdot = zeros(length(dt)), Ydot = zeros(length(dt)), Zdot = zeros(length(dt)),
     p = zeros(length(dt)), q = zeros(length(dt)), r = zeros(length(dt)),
-    phi0 = 0, theta0 = 0, psi0 = 0)
+    phi0 = 0, theta0 = 0, psi0 = 0, speedofsound=343.0)
 
     # change scalar inputs to vectors
     if isa(Xdot, Number)
@@ -394,7 +397,7 @@ function trajectory_to_freestream(dt;
         Ω = SVector(p[it], q[it], r[it])
 
         # assemble freestream parameters
-        fs[it] = Freestream(Vinf, α, β, Ω)
+        fs[it] = Freestream(Vinf, α, β, Ω, speedofsound)
 
         if it < length(dt)
             # update orientation
