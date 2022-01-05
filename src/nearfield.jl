@@ -890,16 +890,26 @@ to obtain panel forces.
     moment coefficients (per unit span) for each spanwise segment.
 """
 function lifting_line_coefficients(system, r, c; frame=Body())
-    TF = promote_type(eltype(system), eltype(eltype(r)), eltype(eltype(c)))
-    nsurf = length(system.surfaces)
+    # unpack parameters stored in `system`
+    ref = system.reference[]
+    fs = system.freestream[]
+    surfaces = system.surfaces
+    properties = system.properties
+
+    return lifting_line_coefficients(surfaces, properties, ref, fs, r, c; frame=frame)
+end
+
+function lifting_line_coefficients(surfaces, properties, ref, fs, r, c; frame=Body())
+    TF = promote_type(eltype(eltype(surfaces)), eltype(eltype(properties)), eltype(eltype(r)), eltype(eltype(c)))
+    nsurf = length(surfaces)
     cf = Vector{Matrix{TF}}(undef, nsurf)
     cm = Vector{Matrix{TF}}(undef, nsurf)
     for isurf = 1:nsurf
-        ns = size(system.surfaces[isurf], 2)
+        ns = size(surfaces[isurf], 2)
         cf[isurf] = Matrix{TF}(undef, 3, ns)
         cm[isurf] = Matrix{TF}(undef, 3, ns)
     end
-    return lifting_line_coefficients!(cf, cm, system, r, c; frame)
+    return lifting_line_coefficients!(cf, cm, surfaces, properties, ref, fs, r, c; frame=frame)
 end
 
 """
@@ -909,22 +919,28 @@ In-place version of [`lifting_line_coefficients`](@ref)
 """
 function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
 
-    # number of surfaces
-    nsurf = length(system.surfaces)
-
     # check that a near field analysis has been performed
     @assert system.near_field_analysis[] "Near field analysis required"
 
-    # extract reference properties
+    # unpack parameters stored in `system`
     ref = system.reference[]
     fs = system.freestream[]
+    surfaces = system.surfaces
+    properties = system.properties
+
+    return lifting_line_coefficients!(cf, cm, surfaces, properties, ref, fs, r, c; frame=frame)
+end
+
+function lifting_line_coefficients!(cf, cm, surfaces, properties, ref, fs, r, c; frame)
+    # number of surfaces
+    nsurf = length(surfaces)
 
     # iterate through each lifting surface
     for isurf = 1:nsurf
-        nc, ns = size(system.surfaces[isurf])
+        nc, ns = size(surfaces[isurf])
         # extract current surface panels and panel properties
-        panels = system.surfaces[isurf]
-        properties = system.properties[isurf]
+        panels = surfaces[isurf]
+        panels_properties = properties[isurf]
         # loop through each chordwise set of panels
         for j = 1:ns
             # calculate segment length
@@ -941,17 +957,17 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
             for i = 1:nc
                 # add influence of bound vortex
                 rb = top_center(panels[i,j])
-                cfb = properties[i,j].cfb
+                cfb = panels_properties[i,j].cfb
                 cfj += cfb
                 cmj += cross(rb - rs, cfb)
                 # add influence of left vortex leg
                 rl = left_center(panels[i,j])
-                cfl = properties[i,j].cfl
+                cfl = panels_properties[i,j].cfl
                 cfj += cfl
                 cmj += cross(rl - rs, cfl)
                 # add influence of right vortex leg
                 rr = right_center(panels[i,j])
-                cfr = properties[i,j].cfr
+                cfr = panels_properties[i,j].cfr
                 cfj += cfr
                 cmj += cross(rr - rs, cfr)
             end
@@ -964,6 +980,34 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
             cf[isurf][:,j] = cfj
             cm[isurf][:,j] = cmj
         end
+    end
+
+    return cf, cm
+end
+
+function lifting_line_coefficients_history(system, surface_history, property_history, r, c; frame=Body())
+    # unpack system parameters
+    symmetric = system.symmetric
+    ref = system.reference[]
+    fs = system.freestream[]
+    surfaces = system.surfaces
+
+    # float type
+    TF = eltype(system)
+
+    # number of time steps
+    nt = length(property_history)
+
+    # convert single freestream input to vector
+    if isa(fs, Freestream)
+        fs = fill(fs, nt)
+    end
+
+    # initialize time history coefficients
+    cf = Vector{Vector{Matrix{TF}}}(undef, nt)
+    cm = Vector{Vector{Matrix{TF}}}(undef, nt)
+    for it in 1:nt
+        cf[it], cm[it] = lifting_line_coefficients(surface_history[it], property_history[it], ref, fs[it], r[it], c[it]; frame=frame)
     end
 
     return cf, cm
