@@ -203,7 +203,6 @@ Writes geometry to Paraview files for visualization.
  - `wake_circulation = zeros(size(surfaces, 2))`: Contribution to the trailing
     edge circulation from the wake attached to this surface
  - `metadata = Dict()`: Dictionary of metadata to include in generated files
- - `compress = true`: Tell WriteVTK.jl to enable compression. `compress=true` appears to cause a memory leak: https://github.com/jipolanco/WriteVTK.jl/issues/43
 """
 function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties=nothing;
     symmetric = nothing,
@@ -212,8 +211,7 @@ function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties
     xhat = SVector(1, 0, 0),
     wake_length = 10,
     wake_circulation = zeros(size(surface, 2)),
-    metadata = Dict(),
-    compress=true)
+    metadata = Dict())
 
     # get float type
     TF = eltype(eltype(surface))
@@ -346,7 +344,7 @@ function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties
     end
 
     # horizontal bound vortices
-    vtk_grid(vtmfile, points, lines_h; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points, lines_h) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
@@ -367,7 +365,7 @@ function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties
     end
 
     # vertical bound vortices
-    vtk_grid(vtmfile, points, lines_v; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points, lines_v) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
@@ -393,7 +391,7 @@ function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties
 
     cells_cp = [MeshCell(PolyData.Verts(), [i]) for i = 1:N]
 
-    vtk_grid(vtmfile, points_cp, cells_cp; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points_cp, cells_cp) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
@@ -510,7 +508,7 @@ function write_vtk!(vtmfile, surface::AbstractMatrix{<:SurfacePanel}, properties
     if trailing_vortices || trailing_edge
 
         # trailing edge and trailing vortices
-        vtk_grid(vtmfile, points_t, lines_t; compress=compress) do vtkfile
+        vtk_grid(vtmfile, points_t, lines_t) do vtkfile
 
             # add metadata
             for (key, value) in pairs(metadata)
@@ -547,8 +545,6 @@ Writes geometry to Paraview files for visualization.
  - `surface_circulation = zeros(size(wake, 2))`: Contribution to the leading edge
     circulation from the surface attached to this wake.
  - `metadata = Dict()`: Dictionary of metadata to include in generated files
- - `compress = true`: Tell WriteVTK.jl to enable compression. `compress=true`
-    appears to cause a memory leak: https://github.com/jipolanco/WriteVTK.jl/issues/43
 """
 function write_vtk!(vtmfile, wake::AbstractMatrix{<:WakePanel};
     symmetric,
@@ -556,8 +552,7 @@ function write_vtk!(vtmfile, wake::AbstractMatrix{<:WakePanel};
     xhat = SVector(1, 0, 0),
     wake_length = 10,
     surface_circulation = zeros(size(wake, 2)),
-    metadata=Dict(),
-    compress=true)
+    metadata=Dict())
 
     # do nothing if no wake panels are present
     if isempty(wake)
@@ -640,7 +635,7 @@ function write_vtk!(vtmfile, wake::AbstractMatrix{<:WakePanel};
     end
 
     # horizontal bound vortices
-    vtk_grid(vtmfile, points, lines_h; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points, lines_h) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
@@ -652,7 +647,7 @@ function write_vtk!(vtmfile, wake::AbstractMatrix{<:WakePanel};
     end
 
     # vertical bound vortices
-    vtk_grid(vtmfile, points, lines_v; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points, lines_v) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
@@ -743,7 +738,7 @@ function write_vtk!(vtmfile, wake::AbstractMatrix{<:WakePanel};
     end
 
     # trailing edge and trailing vortices
-    vtk_grid(vtmfile, points_t, lines_t; compress=compress) do vtkfile
+    vtk_grid(vtmfile, points_t, lines_t) do vtkfile
 
         # add metadata
         for (key, value) in pairs(metadata)
