@@ -266,6 +266,9 @@ step.
     to `true`.
  - `prandtl_glauert': Flag indicating whether the Prandtl-Glauert
     compressibility correction should be used. Defaults to `false`.
+ - `unsteady_kj': Flag indicating whether the unsteady part of 
+    the Kutta-Joukowski theorem should be used for the nearfield loading calculation.
+    Defaults to `true`.
 """
 unsteady_analysis
 
@@ -309,7 +312,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     calculate_influence_matrix = true,
     near_field_analysis = true,
     derivatives = true,
-    prandtl_glauert = false)
+    prandtl_glauert = false,
+    unsteady_kj=true)
 
     # float number type
     TF = eltype(system)
@@ -416,7 +420,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
                 near_field_analysis = it in save || (last_step && near_field_analysis),
                 derivatives = last_step && derivatives,
-                prandtl_glauert = prandtl_glauert)
+                prandtl_glauert = prandtl_glauert,
+                unsteady_kj = unsteady_kj)
         else
             propagate_system!(system, fs[it], dt[it];
                 additional_velocity,
@@ -426,7 +431,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
                 near_field_analysis = it in save || (last_step && near_field_analysis),
                 derivatives = last_step && derivatives,
-                prandtl_glauert = prandtl_glauert)
+                prandtl_glauert = prandtl_glauert,
+                unsteady_kj = unsteady_kj)
         end
 
         # increment wake panel counter for each surface
@@ -482,6 +488,8 @@ unsteady vortex lattice method system of equations.
     freestream variables should be calculated.
  - `prandtl_glauert`: Flag indicating whether the Prandtl-Glauert
     compressibility correction should be used.
+ - `unsteady_kj': Flag indicating whether the unsteady part of 
+    the Kutta-Joukowski theorem should be used for the nearfield loading calculation.
 """
 propagate_system!
 
@@ -498,7 +506,8 @@ function propagate_system!(system, surfaces, fs, dt;
     calculate_influence_matrix,
     near_field_analysis,
     derivatives,
-    prandtl_glauert)
+    prandtl_glauert,
+    unsteady_kj)
 
     # NOTE: Each step models the transition from `t = t[it]` to `t = [it+1]`
     # (e.g. the first step models from `t = 0` to `t = dt`).  Properties are
@@ -611,8 +620,10 @@ function propagate_system!(system, surfaces, fs, dt;
             wake_finite_core, trailing_vortices, xhat)
     end
 
-    # save (negative) previous circulation in dΓdt
-    dΓdt .= .-Γ
+    if unsteady_kj
+        # save (negative) previous circulation in dΓdt
+        dΓdt .= .-Γ
+    end
 
     # solve for the new circulation
     if derivatives
@@ -621,9 +632,13 @@ function propagate_system!(system, surfaces, fs, dt;
         circulation!(Γ, AIC, w)
     end
 
-    # solve for dΓdt using finite difference `dΓdt = (Γ - Γp)/dt`
-    dΓdt .+= Γ # add newly computed circulation
-    dΓdt ./= dt # divide by corresponding time step
+    if unsteady_kj
+        # solve for dΓdt using finite difference `dΓdt = (Γ - Γp)/dt`
+        dΓdt .+= Γ # add newly computed circulation
+        dΓdt ./= dt # divide by corresponding time step
+    else
+        fill!(dΓdt, 0)
+    end
 
     # compute transient forces on each panel (if necessary)
     if near_field_analysis
