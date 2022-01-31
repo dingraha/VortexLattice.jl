@@ -969,6 +969,30 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
     return cf, cm
 end
 
+@inline function get_lifting_line_velocity(system, r; additional_velocity = nothing)
+    # rc is the location where we want to find the velocity.
+    surfaces = system.surfaces
+
+    # extract reference properties
+    ref = system.reference[]
+    fs = system.freestream[]
+
+    Vh = system.Vh
+    Vv = system.Vv
+
+    # freestream velocity
+    Vi = freestream_velocity(fs)
+
+    # rotational velocity
+    Vi += rotational_velocity(rc, fs, ref)
+
+    # additional velocity field
+    if !isnothing(additional_velocity)
+        Vi += additional_velocity(rc)
+    end
+
+end
+
 """
     body_to_frame(CF, CM, reference, freestream, frame)
 
