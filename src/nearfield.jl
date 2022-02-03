@@ -935,6 +935,62 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
             rs = (rls + rrs)/2
             # calculate reference chord
             cs = (c[isurf][j] + c[isurf][j+1])/2
+            
+            # begining finding the local velocity
+            Vi = freestream_velocity(fs)
+            # rotational velocity
+            Vi += rotational_velocity(rs, fs, ref)
+
+            # velocity due to surface motion
+            if !isnothing(Vh)
+                # average over this set of panels in the chordwise direction
+                Vi += sum(Vh[isurf][:, j])./nc
+            end
+
+            # induced velocity from surfaces and wakes
+            jΓ = 0 # index for accessing Γ
+            for jsurf = 1:nsurf
+
+                # number of panels on sending surface
+                sending = system.surfaces[jsurf]
+                Ns = length(sending)
+
+                # see if wake panels are being used
+                wake_panels = nwake[jsurf] > 0
+
+                # check if we need to shift shedding locations
+                if isnothing(system.wake_shedding_locations)
+                    shedding_locations = nothing
+                else
+                    shedding_locations = system.wake_shedding_locations[jsurf]
+                end
+
+                # extract circulation values corresonding to the sending surface
+                vΓ = view(system.Γ, jΓ+1:jΓ+Ns)
+
+                # induced velocity on another surface
+                Vi += induced_velocity(rs, surfaces[jsurf], vΓ;
+                    finite_core = surface_id[isurf] != surface_id[jsurf],
+                    wake_shedding_locations = shedding_locations,
+                    symmetric = symmetric[jsurf],
+                    trailing_vortices = trailing_vortices[jsurf] && !wake_panels,
+                    xhat = xhat)
+
+                # induced velocity from corresponding wake
+                if wake_panels
+                    Vi += induced_velocity(rs, wakes[jsurf];
+                        finite_core = wake_finite_core[jsurf] || (surface_id[isurf] != surface_id[jsurf]),
+                        symmetric = symmetric[jsurf],
+                        nc = nwake[jsurf],
+                        trailing_vortices = trailing_vortices[jsurf],
+                        xhat = xhat)
+                end
+
+                jΓ += Ns # increment Γ index for sending panels
+            end
+
+            # Now I should have the local velocity.
+
             # calculate section force and moment coefficients
             cfj = @SVector zeros(eltype(cf[isurf]), 3)
             cmj = @SVector zeros(eltype(cm[isurf]), 3)
@@ -969,16 +1025,81 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
     return cf, cm
 end
 
-@inline function get_lifting_line_velocity(system, r; additional_velocity = nothing)
-    # rc is the location where we want to find the velocity.
-    surfaces = system.surfaces
+
+"""
+    lifting_line_velocity(system, r; additional_velocity=nothing)
+
+Return the velocity for each spanwise segment of a lifting line representation
+of the geometry.
+
+# Arguments
+ - `system`: Object of type [`System`](@ref) that holds precalculated
+    system properties.
+ - `r`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns+1) which contains the x, y, and z coordinates
+    of the resulting lifting line coordinates
+ - `additional_velocity`: Function defining additional velocity field
+
+# Return Arguments:
+ - `v`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    velocity for each spanwise segment.
+"""
+@inline function lifting_line_velocity(system, r, additional_velocity = nothing)
+
+    # number of surfaces
+    nsurf = length(system.surfaces)
 
     # extract reference properties
     ref = system.reference[]
     fs = system.freestream[]
 
-    Vh = system.Vh
-    Vv = system.Vv
+    # iterate through each lifting surface
+    for isurf = 1:nsurf
+        nc, ns = size(system.surfaces[isurf])
+        # extract current surface panels and panel properties
+        panels = system.surfaces[isurf]
+        properties = system.properties[isurf]
+        # loop through each chordwise set of panels
+        for j = 1:ns
+            # calculate segment length
+            rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
+            rrs = SVector(r[isurf][1,j+1], r[isurf][2,j+1], r[isurf][3,j+1])
+            ds = norm(rrs - rls)
+            # calculate reference location
+            rs = (rls + rrs)/2
+            # calculate reference chord
+            cs = (c[isurf][j] + c[isurf][j+1])/2
+            # calculate section force and moment coefficients
+            cfj = @SVector zeros(eltype(cf[isurf]), 3)
+            cmj = @SVector zeros(eltype(cm[isurf]), 3)
+            for i = 1:nc
+                # add influence of bound vortex
+                rb = top_center(panels[i,j])
+                cfb = properties[i,j].cfb
+                cfj += cfb
+                cmj += cross(rb - rs, cfb)
+                # add influence of left vortex leg
+                rl = left_center(panels[i,j])
+                cfl = properties[i,j].cfl
+                cfj += cfl
+                cmj += cross(rl - rs, cfl)
+                # add influence of right vortex leg
+                rr = right_center(panels[i,j])
+                cfr = properties[i,j].cfr
+                cfj += cfr
+                cmj += cross(rr - rs, cfr)
+            end
+            # update normalization
+            cfj *= ref.S/(ds*cs)
+            cmj *= ref.S/(ds*cs^2)
+            # change coordinate frame
+            cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
+            # save coefficients
+            cf[isurf][:,j] = cfj
+            cm[isurf][:,j] = cmj
+        end
+    end
 
     # freestream velocity
     Vi = freestream_velocity(fs)
