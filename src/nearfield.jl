@@ -607,6 +607,86 @@ function body_forces(surfaces, properties, ref, fs, symmetric, frame)
 end
 
 """
+    body_viscous_forces(r, c, cfv, reference, freestream, symmetric, frame)
+
+Return the viscous body force coefficients given the panel properties for `surfaces`
+
+The viscous lifting line coefficients must be expressed in the [`Body()`](@ref) frame.
+
+ - `r`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns+1) which contains the x, y, and z coordinates
+    of the resulting lifting line coordinates
+ - `c`: Vector with length equal to the number of surfaces, with each element
+    being a vector of length `ns+1` which contains the chord lengths at each
+    lifting line coordinate.
+ - `cfv`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    viscous force coefficients (per unit span) for each spanwise segment,
+    expressed in the [`Body()`](@ref) reference frame.
+ - `reference`: Reference parameters (see [`Reference`](@ref))
+ - `freestream`: Freestream parameters (see [`Freestream`]@ref)
+ - `symmetric`: (required) Flag for each surface indicating whether a mirror image
+   (across the X-Z plane) was used when calculating induced velocities
+ - `frame`: frame in which to return `CF` and `CM`, options are [`Body()`](@ref) (default),
+   [`Stability()`](@ref), and [`Wind()`](@ref)
+"""
+function body_viscous_forces(r, c, cfv, ref, fs, symmetric, frame)
+    TF = promote_type(eltype(eltype(r)), eltype(c), eltype(eltype(cfv)), eltype(ref), eltype(fs))
+
+    # initialize body force coefficients
+    CF = @SVector zeros(TF, 3)
+    CM = @SVector zeros(TF, 3)
+
+    # loop through all surfaces
+    for isurf = 1:length(r)
+
+        # initialize surface contribution to body force coefficients
+        CFi = @SVector zeros(TF, 3)
+        CMi = @SVector zeros(TF, 3)
+
+        # loop through all the lifting line elements for this surface
+        ns = size(r[isurf], 2)
+        for j = 1:ns
+            # calculate segment length
+            rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
+            rrs = SVector(r[isurf][1,j+1], r[isurf][2,j+1], r[isurf][3,j+1])
+            ds = norm(rrs - rls)
+            # calculate reference location
+            rs = (rls + rrs)/2
+            # calculate reference chord
+            cs = (c[isurf][j] + c[isurf][j+1])/2
+            # add viscous loading for this spanwise station
+            Δr = rs - ref.r
+            cf = @view cfv[isurf][:, j]
+            # adjust non-dimensionalization to match what body_forces uses
+            cf *= ds*cs/ref.S
+            CFi += cf
+            CMi += cross(Δr, cf)
+        end
+
+        # adjust forces from this surface to account for symmetry
+        if symmetric[isurf]
+            CFi = SVector(2*CFi[1], 0.0, 2*CFi[3])
+            CMi = SVector(0.0, 2*CMi[2], 0.0)
+        end
+
+        # add to body forces
+        CF += CFi
+        CM += CMi
+
+    end
+
+    # add reference length in moment normalization
+    reference_length = SVector(ref.b, ref.c, ref.b)
+    CM = CM ./ reference_length
+
+    # switch to specified frame
+    CF, CM = body_to_frame(CF, CM, ref, fs, frame)
+
+    return CF, CM
+end
+
+"""
     body_forces_derivatives(system)
 
 Return the body force coefficients for the `system` and their derivatives with
@@ -935,61 +1015,6 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
             rs = (rls + rrs)/2
             # calculate reference chord
             cs = (c[isurf][j] + c[isurf][j+1])/2
-            
-            # begining finding the local velocity
-            Vi = freestream_velocity(fs)
-            # rotational velocity
-            Vi += rotational_velocity(rs, fs, ref)
-
-            # velocity due to surface motion
-            if !isnothing(Vh)
-                # average over this set of panels in the chordwise direction
-                Vi += sum(Vh[isurf][:, j])./nc
-            end
-
-            # induced velocity from surfaces and wakes
-            jΓ = 0 # index for accessing Γ
-            for jsurf = 1:nsurf
-
-                # number of panels on sending surface
-                sending = system.surfaces[jsurf]
-                Ns = length(sending)
-
-                # see if wake panels are being used
-                wake_panels = nwake[jsurf] > 0
-
-                # check if we need to shift shedding locations
-                if isnothing(system.wake_shedding_locations)
-                    shedding_locations = nothing
-                else
-                    shedding_locations = system.wake_shedding_locations[jsurf]
-                end
-
-                # extract circulation values corresonding to the sending surface
-                vΓ = view(system.Γ, jΓ+1:jΓ+Ns)
-
-                # induced velocity on another surface
-                Vi += induced_velocity(rs, surfaces[jsurf], vΓ;
-                    finite_core = surface_id[isurf] != surface_id[jsurf],
-                    wake_shedding_locations = shedding_locations,
-                    symmetric = symmetric[jsurf],
-                    trailing_vortices = trailing_vortices[jsurf] && !wake_panels,
-                    xhat = xhat)
-
-                # induced velocity from corresponding wake
-                if wake_panels
-                    Vi += induced_velocity(rs, wakes[jsurf];
-                        finite_core = wake_finite_core[jsurf] || (surface_id[isurf] != surface_id[jsurf]),
-                        symmetric = symmetric[jsurf],
-                        nc = nwake[jsurf],
-                        trailing_vortices = trailing_vortices[jsurf],
-                        xhat = xhat)
-                end
-
-                jΓ += Ns # increment Γ index for sending panels
-            end
-
-            # Now I should have the local velocity.
 
             # calculate section force and moment coefficients
             cfj = @SVector zeros(eltype(cf[isurf]), 3)
@@ -1011,9 +1036,11 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
                 cfj += cfr
                 cmj += cross(rr - rs, cfr)
             end
+
             # update normalization
             cfj *= ref.S/(ds*cs)
             cmj *= ref.S/(ds*cs^2)
+
             # change coordinate frame
             cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
             # save coefficients
@@ -1025,30 +1052,87 @@ function lifting_line_coefficients!(cf, cm, system, r, c; frame=Body())
     return cf, cm
 end
 
-
 """
-    lifting_line_velocity(system, r; additional_velocity=nothing)
+    lifting_line_viscous_coefficients!(cf, cm, system, r, drag_polar; frame=Body(), unsteady=true, additional_velocity=nothing)
 
-Return the velocity for each spanwise segment of a lifting line representation
-of the geometry.
+Return the viscous force and moment coefficients (per unit span) for each spanwise segment
+of a lifting line representation of the geometry.
+
+The inviscid force and moment coefficients `cf` and `cm` must be expressed in
+the [`Body()`](@ref) frame, but will be modified and returned in the frame
+specified by the `frame` argument.
+
+This function requires that a near-field analysis has been performed on `system`
+to obtain panel forces.
 
 # Arguments
+ - `cf`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    inviscid force coefficients (per unit span) for each spanwise segment,
+    expressed in the [`Body()`](@ref) frame.
+ - `cm`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    inviscid moment coefficients (per unit span) for each spanwise segment,
+    expressed in the [`Body()`](@ref) frame.
  - `system`: Object of type [`System`](@ref) that holds precalculated
     system properties.
  - `r`: Vector with length equal to the number of surfaces, with each element
     being a matrix with size (3, ns+1) which contains the x, y, and z coordinates
     of the resulting lifting line coordinates
+ - `drag_polar`: Function defining the drag coefficient as a function of lift
+    coefficient for each spanwise section
+
+# Keyword Arguments
+ - `frame`: frame in which to return `cf`, `cm`, `cfv`, `cfm`, possible options are
+    [`Body()`](@ref) (default), [`Stability()`](@ref), and [`Wind()`](@ref)`
+ - `unsteady`: Flag indicating if `system` contains the result of an unsteady calculation, and thus
+    should incorperate possible grid motion and the wake shedding locations in the
+    lifting line velocity
  - `additional_velocity`: Function defining additional velocity field
 
 # Return Arguments:
- - `v`: Vector with length equal to the number of surfaces, with each element
+ - `cf`: Vector with length equal to the number of surfaces, with each element
     being a matrix with size (3, ns) which contains the x, y, and z direction
-    velocity for each spanwise segment.
+    inviscid force coefficients (per unit span) for each spanwise segment,
+    expressed in the reference frame indicated by the `frame` argument.
+ - `cm`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    inviscid moment coefficients (per unit span) for each spanwise segment,
+    expressed in the reference frame indicated by the `frame` argument.
+ - `cfv`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    viscous force coefficients (per unit span) for each spanwise segment,
+    expressed in the reference frame indicated by the `frame` argument.
+ - `cmv`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    viscous moment coefficients (per unit span) for each spanwise segment,
+    expressed in the reference frame indicated by the `frame` argument.
 """
-@inline function lifting_line_velocity(system, r, additional_velocity = nothing)
+function lifting_line_viscous_coefficients!(cf, cm, system, r, drag_polar; frame=Body(), unsteady=true, additional_velocity=nothing)
+    TF = promote_type(eltype(eltype(cf)), eltype(eltype(cm)), eltype(system), eltype(eltype(r)))
+    nsurf = length(system.surfaces)
+    cfv = Vector{Matrix{TF}}(undef, nsurf)
+    cmv = Vector{Matrix{TF}}(undef, nsurf)
+    for isurf = 1:nsurf
+        ns = size(system.surfaces[isurf], 2)
+        cfv[isurf] = Matrix{TF}(undef, 3, ns)
+        cmv[isurf] = Matrix{TF}(undef, 3, ns)
+    end
+    return lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_polar; frame, unsteady, additional_velocity)
+end
 
+
+"""
+    lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_polar; frame=Body(), unsteady=true, additional_velocity=nothing)
+
+In-place version of [`lifting_line_viscous_coefficients`](@ref)
+"""
+function lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_polar; frame=Body(), unsteady=true, additional_velocity=nothing)
     # number of surfaces
     nsurf = length(system.surfaces)
+
+    # check that a near field analysis has been performed
+    @assert system.near_field_analysis[] "Near field analysis required"
 
     # extract reference properties
     ref = system.reference[]
@@ -1062,56 +1146,195 @@ of the geometry.
         properties = system.properties[isurf]
         # loop through each chordwise set of panels
         for j = 1:ns
+
+            # Get the invsicid lifting line coefficient for this spanwise
+            # station.
+            cfj = SVector{3,eltype(cf[isurf])}(cf[isurf][:, j])
+
             # calculate segment length
             rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
             rrs = SVector(r[isurf][1,j+1], r[isurf][2,j+1], r[isurf][3,j+1])
             ds = norm(rrs - rls)
             # calculate reference location
             rs = (rls + rrs)/2
-            # calculate reference chord
-            cs = (c[isurf][j] + c[isurf][j+1])/2
-            # calculate section force and moment coefficients
-            cfj = @SVector zeros(eltype(cf[isurf]), 3)
-            cmj = @SVector zeros(eltype(cm[isurf]), 3)
-            for i = 1:nc
-                # add influence of bound vortex
-                rb = top_center(panels[i,j])
-                cfb = properties[i,j].cfb
-                cfj += cfb
-                cmj += cross(rb - rs, cfb)
-                # add influence of left vortex leg
-                rl = left_center(panels[i,j])
-                cfl = properties[i,j].cfl
-                cfj += cfl
-                cmj += cross(rl - rs, cfl)
-                # add influence of right vortex leg
-                rr = right_center(panels[i,j])
-                cfr = properties[i,j].cfr
-                cfj += cfr
-                cmj += cross(rr - rs, cfr)
-            end
-            # update normalization
-            cfj *= ref.S/(ds*cs)
-            cmj *= ref.S/(ds*cs^2)
+
+            # calculate the local velocity for the current chordwise set of panels
+            V = lifting_line_velocity(isurf, j, rs, system, unsteady, additional_velocity)
+
+            # normalized direction along the lifting line's length
+            span_dir = (rrs - rls)/ds
+
+            # Now I want to know the lift force, which is the force in the
+            # direction that's normal to both the local velocity and span_dir
+            lift_dir = cross(V./norm(V), span_dir)
+            # Now, cfj is normalized by what? ds and cs. That's good.
+            # And by what else?
+            # 1/2*RHO*ref.V^2
+            # So I want the 1/2 rho, but I think I need it to be nondimenialized
+            # by the velocity component normal to the span and lift directions.
+            # This isn't the same as norm(V) since that might have a component
+            # along the span direction, and I don't want that.
+            drag_dir = cross(span_dir, lift_dir)
+            Vairfoil = dot(drag_dir, V)
+            # So remove the ref.V^2 and replace it with Vairfoil^2. Now I should
+            # have the force divided by 1/2*RHO*Vairfoil^2*ds*cs
+            cfj_airfoil = cfj * ref.V^2/Vairfoil^2
+            # Now I want the lift coefficient, which is the force in the lift
+            # direction.
+            clj = dot(cfj_airfoil, lift_dir)
+
+            # Now I want the drag coefficient.
+            cdj = drag_polar(clj)
+
+            # Update the dimensionalization to match cfj.
+            cdj *= Vairfoil^2/ref.V^2
+
+            # The force needs to be in the drag direction.
+            cfvj = cdj*drag_dir
+            # What do I do about the moment coefficient?
+            # Nothing, since I'm assuming that the viscous load passes
+            # through the center of the lifting line element, and so the
+            # moment arm is zero.
+            cmvj = zero(cfvj)
+            
             # change coordinate frame
             cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
+            cfvj, cmvj = body_to_frame(cfvj, cmvj, ref, fs, frame)
+
             # save coefficients
             cf[isurf][:,j] = cfj
             cm[isurf][:,j] = cmj
+            cfv[isurf][:,j] = cfvj
+            cmv[isurf][:,j] = cfmj
         end
     end
 
+    return cfv, cmv, cf, cm
+end
+
+
+"""
+    lifting_line_velocity(isurf, is, rc, system, unsteady=true, additional_velocity=nothing)
+
+Return the velocity for a spanwise segment of a lifting line representation
+of the geometry associated with surface `isurf` at spanwise segment `is`.
+
+# Arguments
+ - `isurf`: Index of the lifting surface this spanwise segment is associated with.
+ - `is`: Spanwise index on surface `isurf` this segment is associated with.
+ - `rc`: Length-3 vector containing the x, y, and z coordinates of the center of the
+    lifting line segment.
+ - `system`: Object of type [`System`](@ref) that holds precalculated system properties.
+ - `unsteady`: Flag indicating if `system` contains the result of an unsteady
+    calculation, and thus should incorperate possible grid motion and the wake
+    shedding locations in the lifting line velocity
+ - `additional_velocity`: Function defining additional velocity field
+
+# Return Arguments:
+ - `V`: Length-3 SVector containing the x, y, and z components of the velocity for the spanwise segment.
+"""
+@inline function lifting_line_velocity(isurf, is, rc, system, unsteady=true, additional_velocity=nothing)
+    # unpack variables stored in `system`
+    surfaces = system.surfaces
+    Γ = system.Γ
+    ref = system.reference[]
+    fs = system.freestream[]
+    Vh = system.Vh
+    nwake = system.nwake
+    wake_shedding_locations = system.wake_shedding_locations
+    symmetric = system.symmetric
+    trailing_vortices = system.trailing_vortices
+    xhat = system.xhat[]
+    wakes = system.wakes
+    wake_finite_core = system.wake_finite_core
+    surface_id = system.surface_id
+
+    # number of surfaces
+    nsurf = length(surfaces)
+
+    # size of the current surface
+    nc, ns = size(surfaces[isurf])
+
     # freestream velocity
-    Vi = freestream_velocity(fs)
+    V = freestream_velocity(fs)
 
     # rotational velocity
-    Vi += rotational_velocity(rc, fs, ref)
+    V += rotational_velocity(rc, fs, ref)
 
     # additional velocity field
     if !isnothing(additional_velocity)
-        Vi += additional_velocity(rc)
+        V += additional_velocity(rc)
     end
 
+    # velocity due to surface motion
+    # How to get the velocity of the lifting line?
+    # The `System` has the velocity at the control points (the 3/4-chord
+    # location midway between the vertical elements of each panel) and at the
+    # center of the horizontal and vertical panels.
+    # I think averaging either the control point or horizontal segments would
+    # make sense.
+    if unsteady
+        V += sum(Vh[isurf][:, is])./nc
+    end
+
+    # induced velocity from surfaces and wakes
+    jΓ = 0 # index for accessing Γ
+    for jsurf = 1:nsurf
+
+        # number of panels on sending surface
+        sending = surfaces[jsurf]
+        Ns = length(sending)
+
+        # see if wake panels are being used
+        wake_panels = nwake[jsurf] > 0
+
+        # check if we need to shift shedding locations
+        # is there a way to tell if this is needed?
+        # it's always used in `propagate_system!`, and never used in
+        # `steady_analysis!`. 
+        # Well, in the `steady_analysis` case, they'll just be zero vectors,
+        # right?
+        # Yeah, but it looks like I'll need sheading_locations to be nothing to
+        # get the logic correct.
+        if unsteady
+            shedding_locations = wake_shedding_locations[jsurf]
+        else
+            shedding_locations = nothing
+        end
+
+        # extract circulation values corresonding to the sending surface
+        vΓ = view(Γ, jΓ+1:jΓ+Ns)
+
+        # OK, so what to do about this?
+        # `I` is the CartesianIndex for the recieving panel in
+        # `near_field_forces!`.
+        # And how does that affect the calculation? Ah, it just changes which
+        # vortex elements should be fixed.
+        # Don't want that, but I do need to make sure that the finite core model
+        # is always used, since the induced velocity calculation would blow up
+        # if that wasn't the case and the lifting line location was on one of
+        # the vortex elements.
+        V += induced_velocity(rc, surfaces[jsurf], vΓ;
+            finite_core = true,
+            wake_shedding_locations = shedding_locations,
+            symmetric = symmetric[jsurf],
+            trailing_vortices = trailing_vortices[jsurf] && !wake_panels,
+            xhat = xhat)
+
+        # induced velocity from corresponding wake
+        if wake_panels
+            V += induced_velocity(rc, wakes[jsurf];
+                finite_core = wake_finite_core[jsurf] || (surface_id[isurf] != surface_id[jsurf]),
+                symmetric = symmetric[jsurf],
+                nc = nwake[jsurf],
+                trailing_vortices = trailing_vortices[jsurf],
+                xhat = xhat)
+        end
+
+        jΓ += Ns # increment Γ index for sending panels
+    end
+
+    return V
 end
 
 """
