@@ -645,7 +645,7 @@ function body_viscous_forces(r, c, cfv, ref, fs, symmetric, frame)
         CMi = @SVector zeros(TF, 3)
 
         # loop through all the lifting line elements for this surface
-        ns = size(r[isurf], 2)
+        ns = size(r[isurf], 2)-1
         for j = 1:ns
             # calculate segment length
             rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
@@ -1150,6 +1150,7 @@ function lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_po
             # Get the invsicid lifting line coefficient for this spanwise
             # station.
             cfj = SVector{3,eltype(cf[isurf])}(cf[isurf][:, j])
+            cmj = SVector{3,eltype(cm[isurf])}(cm[isurf][:, j])
 
             # calculate segment length
             rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
@@ -1166,7 +1167,9 @@ function lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_po
 
             # Now I want to know the lift force, which is the force in the
             # direction that's normal to both the local velocity and span_dir
-            lift_dir = cross(V./norm(V), span_dir)
+            # I don't like this, because I'm not sure which order I should cross
+            # the vectors.
+            lift_dir = cross(span_dir, V./norm(V))
             # Now, cfj is normalized by what? ds and cs. That's good.
             # And by what else?
             # 1/2*RHO*ref.V^2
@@ -1174,7 +1177,7 @@ function lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_po
             # by the velocity component normal to the span and lift directions.
             # This isn't the same as norm(V) since that might have a component
             # along the span direction, and I don't want that.
-            drag_dir = cross(span_dir, lift_dir)
+            drag_dir = cross(lift_dir, span_dir)
             Vairfoil = dot(drag_dir, V)
             # So remove the ref.V^2 and replace it with Vairfoil^2. Now I should
             # have the force divided by 1/2*RHO*Vairfoil^2*ds*cs
@@ -1205,7 +1208,7 @@ function lifting_line_viscous_coefficients!(cfv, cmv, cf, cm, system, r, drag_po
             cf[isurf][:,j] = cfj
             cm[isurf][:,j] = cmj
             cfv[isurf][:,j] = cfvj
-            cmv[isurf][:,j] = cfmj
+            cmv[isurf][:,j] = cmvj
         end
     end
 
