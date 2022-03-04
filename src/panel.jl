@@ -606,3 +606,38 @@ Return induced drag from vortex `j` induced on panel `i`
 
     return Di
 end
+
+"""
+    LiftingLineSegment{TF}
+
+Lifting line segment associated with a Matrix of SurfacePanels.
+
+**Fields**
+ - `rl`: position of the left endpoint of the segment
+ - `rr`: position of the right endpoint of the segment
+ - `chord_l`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
+ - `chord_r`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
+"""
+struct LiftingLineSegment{TF}
+    rl::SVector{3, TF}
+    rr::SVector{3, TF}
+    chord_l::TF
+    chord_r::TF
+end
+
+@inline Base.eltype(::Type{LiftingLineSegment{TF}}) where TF = TF
+@inline Base.eltype(::LiftingLineSegment{TF}) where TF = TF
+
+"""
+    left(segment::LiftingLineSegment)
+
+Return the left vertex of `segment`
+"""
+@inline left(segment::LiftingLineSegment) = segment.rl
+
+"""
+    right(segment::LiftingLineSegment)
+
+Return the right vertex of `segment`
+"""
+@inline right(segment::LiftingLineSegment) = segment.rr

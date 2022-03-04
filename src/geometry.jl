@@ -482,8 +482,9 @@ function grid_to_surface_panels(xyz, ns, nc;
 end
 
 """
-    wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
-        fc = fill(x -> 0, length(xle)),
+    wing_to_surface_panels(xloc, yloc, zloc, chord, theta, phi, ns, nc;
+        xc = fill(0, length(xloc)),
+        fc = fill(x -> 0, length(xloc)),
         mirror = false,
         fcore = (c, Δs) -> 1e-3,
         spacing_s = Cosine(),
@@ -498,14 +499,18 @@ Return a grid with dimensions (3, i, j) containing the panel corners and a matri
 with dimensions (i, j) containing the generated panels.
 
 # Arguments
- - `xle`: leading edge x-coordinate of each airfoil section
- - `yle`: leading edge y-coordinate of each airfoil section
- - `zle`: leading edge z-coordinate of each airfoil section
+ - `xloc`: x-coordinate of each airfoil section, influenced by xc argument
+ - `yloc`: y-coordinate of each airfoil section, influenced by xc argument
+ - `zloc`: z-coordinate of each airfoil section, influenced by xc argument
  - `chord`: chord length of each airfoil section
  - `theta`: twist of each airfoil section
  - `phi`: dihedral angle of each airfoil section, defined by a right hand rotation about the x-axis
  - `ns`: number of spanwise panels
  - `nc`: number of chordwise panels
+ - `xcloc`: (optional) normalized chordwise shift for each airfoil section. The default value `0`
+    means `xloc`, `yloc`, `zloc` indicate the leading edge location, and `1`
+    indicates the trailing edge. `0.25` would place each airfoil section at the
+    quarter-chord location.
  - `fc`: (optional) camber line function y=f(x) of each airfoil section
  - `mirror`:  mirror the geometry across the X-Z plane?, defaults to `false`
  - `fcore`: function for setting the finite core size based on the chord length
@@ -515,15 +520,16 @@ with dimensions (i, j) containing the generated panels.
  - `spacing_c`: chordwise discretization scheme, defaults to `Uniform()`
  - `interp_s`: interpolation function between spanwise stations, defaults to linear interpolation
 """
-function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
-    fc = fill(x->0, length(xle)),
+function wing_to_surface_panels(xloc, yloc, zloc, chord, theta, phi, ns, nc;
+    xcloc = zero(xloc),
+    fc = fill(x->0, length(xloc)),
     mirror = false,
     fcore = (c, Δs) -> 1e-3,
     spacing_s = Cosine(),
     spacing_c = Uniform(),
     interp_s = (x, y, xpt) -> LinearInterpolation(x, y)(xpt))
 
-    TF = promote_type(eltype(xle), eltype(yle), eltype(zle), eltype(chord), eltype(theta), eltype(phi))
+    TF = promote_type(eltype(xloc), eltype(yloc), eltype(zloc), eltype(chord), eltype(theta), eltype(phi), eltype(xcloc))
 
     N = (1+mirror)*nc*ns
 
@@ -535,8 +541,8 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
     eta_qtr = vcat(0.0, eta_qtr, 1.0)
 
     # check input dimensions
-    n = length(xle)
-    @assert n == length(yle) == length(zle) == length(chord) == length(theta) == length(phi)
+    n = length(xloc)
+    @assert n == length(yloc) == length(zloc) == length(chord) == length(theta) == length(phi) == length(xcloc)
 
     # set bound vortex and control point chordwise locations
     xyz_edge = Array{TF, 3}(undef, 3, nc+1, n)
@@ -552,8 +558,8 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
         sp, cp = sincos(phi[j])
         Rp = @SMatrix [1 0 0; 0 cp -sp; 0 sp cp]
 
-        # location of leading edge
-        rle = SVector(xle[j], yle[j], zle[j])
+        # location of airfoil anchor point
+        rloc = SVector(xloc[j], yloc[j], zloc[j])
 
         # panel edge chordwise locations
         for i = 1:nc+1
@@ -562,7 +568,7 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             zc = fc[j](xc)
 
             # location on airfoil
-            r = SVector(xc, 0, zc)
+            r = SVector(xc - xcloc[j], 0, zc)
 
             # scale by chord length
             r = chord[j] * r
@@ -573,8 +579,8 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             # apply dihedral
             r = Rp * r
 
-            # add leading edge offset
-            r = r + rle
+            # add xloc, yloc, zloc offset
+            r = r + rloc
 
             # store final location
             xyz_edge[:,i,j] = r
@@ -587,7 +593,7 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             zc = fc[j](xc)
 
             # location on airfoil
-            r = SVector(xc, 0, zc)
+            r = SVector(xc - xcloc[j], 0, zc)
 
             # scale by chord length
             r = chord[j] * r
@@ -598,8 +604,8 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             # apply dihedral
             r = Rp * r
 
-            # add leading edge offset
-            r = r + rle
+            # add xloc, yloc, zloc offset
+            r = r + rloc
 
             # store final location
             xyz_bound[:,i,j] = r
@@ -612,7 +618,7 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             zc = fc[j](xc)
 
             # location on airfoil
-            r = SVector(xc, 0, zc)
+            r = SVector(xc - xcloc[j], 0, zc)
 
             # scale by chord length
             r = chord[j] * r
@@ -623,8 +629,8 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
             # apply dihedral
             r = Rp * r
 
-            # add leading edge offset
-            r = r + rle
+            # add xloc, yloc, zloc offset
+            r = r + rloc
 
             # store final location
             xyz_cp[:,i,j] = r
@@ -641,7 +647,7 @@ function wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
     panels = Matrix{SurfacePanel{TF}}(undef,  nc, (1+mirror)*ns)
 
     # check which side we're working with
-    right_side = sum(yle) > 0
+    right_side = sum(yloc) > 0
 
     # populate each panel
     for j = 1:ns
@@ -834,9 +840,11 @@ end
 
 """
     lifting_line_geometry(grids, xc=0.25)
+
 Construct a lifting line representation of the surfaces in `grids` at the
 normalized chordwise location `xc`.  Return the lifting line coordinates
 and chord lengths.
+
 # Arguments
  - `grids`: Vector with length equal to the number of surfaces.  Each element of
     the vector is a grid with shape (3, nc, ns) which defines the discretization
@@ -845,31 +853,31 @@ and chord lengths.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
     Defaults to the quarter chord
 # Return Arguments:
- - `r`: Vector with length equal to the number of surfaces, with each element
-    being a matrix with size (3, ns+1) which contains the x, y, and z coordinates
-    of the resulting lifting line coordinates
- - `c`: Vector with length equal to the number of surfaces, with each element
-    being a vector of length `ns+1` which contains the chord lengths at each
-    lifting line coordinate.
+ - `lifting_lines`: Vector with length equal to the number of surfaces, with each element
+    being a length `ns` vector of `LiftingLineSegment`s 
 """
 function lifting_line_geometry(grids, xc=0.25)
     TF = eltype(eltype(grids))
     nsurf = length(grids)
-    r = Vector{Matrix{TF}}(undef, nsurf)
-    c = Vector{Vector{TF}}(undef, nsurf)
+    # r = Vector{Matrix{TF}}(undef, nsurf)
+    # c = Vector{Vector{TF}}(undef, nsurf)
+    lifting_lines = Vector{Vector{LiftingLineSegment{TF}}}(undef, nsurf)
     for isurf = 1:nsurf
         ns = size(grids[isurf], 3) - 1
-        r[isurf] = Matrix{TF}(undef, 3, ns+1)
-        c[isurf] = Vector{TF}(undef, ns+1)
+        # r[isurf] = Matrix{TF}(undef, 3, ns+1)
+        # c[isurf] = Vector{TF}(undef, ns+1)
+        lifting_lines[isurf] = Vector{TF}(undef, ns)
     end
-    return lifting_line_geometry!(r, c, grids, xc)
+    # return lifting_line_geometry!(r, c, grids, xc)
+    return lifting_line_geometry!(lifting_lines, grids, xc)
 end
 
 """
-    lifting_line_geometry!(r, c, grids, xc=0.25)
+    lifting_line_geometry!(lifting_lines, grids, xc=0.25)
+
 In-place version of [`lifting_line_geometry`](@ref)
 """
-function lifting_line_geometry!(r, c, grids, xc=0.25)
+function lifting_line_geometry!(lifting_lines, grids, xc=0.25)
     nsurf = length(grids)
     # iterate through each lifting surface
     for isurf = 1:nsurf
@@ -877,19 +885,43 @@ function lifting_line_geometry!(r, c, grids, xc=0.25)
         grid = grids[isurf]
         # dimensions of this grid
         nc = size(grid, 2)
-        ns = size(grid, 3)
+        # ns = size(grid, 3)
+        # loop through each spanwise section
+        # for j = 1:ns
+        #     # get leading and trailing edges
+        #     le = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
+        #     te = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
+        #     # get quarter-chord
+        #     # r[isurf][:,j] = linearinterp(xc, le, te)
+        #     r = SVector{3, TF}
+        #     # get chord length
+        #     c[isurf][j] = norm(le - te)
+        # end
+        ns = size(grid, 3) - 1
         # loop through each spanwise section
         for j = 1:ns
-            # get leading and trailing edges
-            le = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
-            te = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
+            # start with the segment's left point
+            # get leading and and trailing edges
+            lel = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
+            tel = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
             # get quarter-chord
-            r[isurf][:,j] = linearinterp(xc, le, te)
+            rl = linearinterp(xc, lel, tel)
             # get chord length
-            c[isurf][j] = norm(le - te)
+            cl = norm(lel - tel)
+
+            # now work on the segment's right point
+            # get leading and and trailing edges
+            ler = SVector(grid[1,1,j+1], grid[2,1,j+1], grid[3,1,j+1])
+            ter = SVector(grid[1,end,j+1], grid[2,end,j+1], grid[3,end,j+1])
+            # get quarter-chord
+            rr = linearinterp(xc, ler, ter)
+            # get chord length
+            cr = norm(ler - ter)
+
+            lifting_lines[isurf][j] = LiftingLineSegment(rl, rr, cl, cr)
         end
     end
-    return r, c
+    return lifting_lines
 end
 
 """
@@ -1005,3 +1037,4 @@ end
 Test whether and of the points in `args` are not on the symmetry plane (y = 0)
 """
 not_on_symmetry_plane(args...; tol=eps()) = !on_symmetry_plane(args...; tol=tol)
+

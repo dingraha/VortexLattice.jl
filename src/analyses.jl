@@ -1,17 +1,20 @@
 """
-    steady_analysis(surfaces, reference, freestream; kwargs...)
+    steady_analysis(grids, reference, freestream; kwargs...)
+    steady_analysis(surfaces, lifting_lines, reference, freestream; kwargs...)
 
 Perform a steady vortex lattice method analysis.  Return an object of type
 [`System`](@ref) containing the system state.
 
 # Arguments
+ - `grids`: Vector of grids of shape (3, nc+1, ns+1) which represent lifting surfaces
  - `surfaces`:
-   - Vector of grids of shape (3, nc+1, ns+1) which represent lifting surfaces
-   or
    - Vector of matrices of shape (nc, ns) containing surface panels (see
    [`SurfacePanel`](@ref))
    where `nc` is the number of chordwise panels and `ns` is the number of
    spanwise panels
+ - `lifting_lines`: Vector of length-`ns` vectors of
+    [`LiftingLineSegment`](@ref), containing a lifting line representation of each
+    surface
  - `reference`: Reference parameters (see [`Reference`](@ref))
  - `freestream`: Freestream parameters (see [`Freestream`](@ref))
 
@@ -46,15 +49,46 @@ Perform a steady vortex lattice method analysis.  Return an object of type
     version of this function.
  - `near_field_analysis`: Flag indicating whether a near field analysis should be
     performed to obtain panel velocities, circulation, and forces. Defaults to `true`.
+ - `lifting_line_analysis`: Flag indicating whether force coefficients should be
+    calculated on a lifting line representation of the geometry. Defaults to
+    `false`.
+ - `viscous_lifting_line`: Flag indicating whether a viscous loading model
+    should be used when calculating the forces acting on the lifting line. Defaults to `false`.
+ - `drag_polar`: Function defining the drag coefficient as a function of lift
+    coefficient for each spanwise section. Used by the viscous lifting line model.
  - `derivatives`: Flag indicating whether the derivatives with respect
     to the freestream variables should be calculated. Defaults to `true`.
+ - `xc`: Normalized chordwise location of the lifting line from the leading edge.
+    Defaults to `0.25`, indicating the lifting line will be constructed along the quarter chord
 """
-function steady_analysis(surfaces, reference, freestream; kwargs...)
+steady_analysis
+
+# grid input
+function steady_analysis(grids::AbstractVector{<:AbstractArray{<:Any, 3}}, reference, freestream;
+        fcore = (c, Δs) -> 1e-3, xc = 0.25, kwargs...)
+
+    # pre-allocate system storage
+    system = System(grids)
+
+    # generate surface panels
+    # grid_to_surface_panels returns an array of the panel corners *and* the
+    # Matrix of SurfacePanels, but we just want the latter, hence the [2].
+    surfaces = [grid_to_surface_panels(grid; fcore)[2] for grid in grids]
+
+    # create lifting lines from the grids
+    lifting_lines = lifting_line_geometry(grids; xc)
+
+    return steady_analysis!(system, surfaces, lifting_lines, reference, freestream; kwargs...,
+        calculate_influence_matrix = true)
+end
+
+# surface panel and lifting line input
+function steady_analysis(surfaces::AbstractVector{<:AbstractMatrix{<:SurfacePanel}}, lifting_lines, reference, freestream; kwargs...)
 
     # pre-allocate system storage
     system = System(surfaces)
 
-    return steady_analysis!(system, surfaces, reference, freestream; kwargs...,
+    return steady_analysis!(system, surfaces, lifting_lines, reference, freestream; kwargs...,
         calculate_influence_matrix = true)
 end
 
@@ -63,7 +97,7 @@ end
 
 Pre-allocated version of `steady_analysis`.
 """
-function steady_analysis!(system, surfaces, ref, fs;
+function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:SurfacePanel}}, lifting_lines, ref, fs;
     symmetric = fill(false, length(surfaces)),
     wakes = [Matrix{WakePanel{Float64}}(undef, 0, size(surfaces[i],2)) for i = 1:length(surfaces)],
     nwake = size.(wakes, 1),
@@ -72,16 +106,26 @@ function steady_analysis!(system, surfaces, ref, fs;
     trailing_vortices = fill(true, length(surfaces)),
     xhat = SVector(1, 0, 0),
     additional_velocity = nothing,
-    fcore = (c, Δs) -> 1e-3,
     calculate_influence_matrix = true,
     near_field_analysis = true,
+    lifting_line_analysis = false,
+    viscous_lifting_line = false,
+    drag_polar = nothing,
     derivatives = true)
+
+    # This probably isn't the "right" way to throw an error.
+    if lifting_line_analysis && !near_field_analysis
+        @error "lifting line analysis requires nearfield analysis"
+    end
+    if viscous_lifting_line && !lifting_line_analysis
+        @error "viscous lifting line analysis requires lifting_line_analysis"
+    end
+    if viscous_lifting_line && (drag_polar === nothing)
+        @error "viscous lifting line requires a drag polar"
+    end
 
     # number of surfaces
     nsurf = length(surfaces)
-
-    # check if input is a grid
-    grid_input = typeof(surfaces) <: AbstractVector{<:AbstractArray{<:Any, 3}}
 
     # if only one value is provided, use it for all surfaces
     symmetric = isa(symmetric, Number) ? fill(symmetric, nsurf) : symmetric
@@ -90,17 +134,10 @@ function steady_analysis!(system, surfaces, ref, fs;
     wake_finite_core = isa(wake_finite_core, Number) ? fill(wake_finite_core, nsurf) : wake_finite_core
     trailing_vortices = isa(trailing_vortices, Number) ? fill(trailing_vortices, nsurf) : trailing_vortices
 
-    # update surface panels stored in `system`
-    if grid_input
-        # generate and store surface panels
-        for isurf = 1:nsurf
-            update_surface_panels!(system.surfaces[isurf], surfaces[isurf]; fcore)
-        end
-    else
-        # store provided surface panels
-        for isurf = 1:nsurf
-            system.surfaces[isurf] .= surfaces[isurf]
-        end
+    # store provided surface panels and lifting lines
+    for isurf = 1:nsurf
+        system.surfaces[isurf] .= surfaces[isurf]
+        system.lifting_lines[isurf] .= lifting_lines[isurf]
     end
 
     # update other parameters stored in `system`
@@ -116,6 +153,7 @@ function steady_analysis!(system, surfaces, ref, fs;
 
     # unpack variables stored in `system`
     surfaces = system.surfaces
+    lifting_lines = system.lifting_lines
     AIC = system.AIC
     w = system.w
     Γ = system.Γ
@@ -123,6 +161,7 @@ function steady_analysis!(system, surfaces, ref, fs;
     dΓ = system.dΓ
     properties = system.properties
     dproperties = system.dproperties
+    lifting_line_properties = system.lifting_line_properties
 
     # see if wake panels are being used
     wake_panels = nwake .> 0
@@ -196,10 +235,28 @@ function steady_analysis!(system, surfaces, ref, fs;
                 trailing_vortices = trailing_vortices,
                 xhat = xhat)
         end
+        if lifting_line_analysis
+            # Do the lifting line stuff.
+            lifting_line_forces!(lifting_line_properties, lifting_lines, properties, surfaces, ref)
+            if viscous_lifting_line
+                lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, properties, surfaces, wakes,
+                    ref, fs, Γ;
+                    additional_velocity = additional_velocity,
+                    Vh = nothing,
+                    symmetric = symmetric,
+                    nwake = nwake,
+                    surface_id = surface_id,
+                    wake_finite_core = wake_finite_core,
+                    wake_shedding_locations = wake_shedding_locations,
+                    trailing_vorticies = trailing_vorticies,
+                    xhat = xhat)
+            end
+        end
     end
 
     # save flags indicating whether certain analyses have been performed
     system.near_field_analysis[] = near_field_analysis
+    system.lifting_line_analysis[] = lifting_line_analysis
     system.derivatives[] = derivatives
 
     # return the modified system
@@ -207,25 +264,31 @@ function steady_analysis!(system, surfaces, ref, fs;
 end
 
 """
-    unsteady_analysis(surfaces, reference, freestream, dt; kwargs...)
+    unsteady_analysis(grids, reference, freestream, dt; kwargs...)
+    unsteady_analysis(surfaces, lifting_lines, reference, freestream, dt; kwargs...)
 
 Perform a unsteady vortex lattice method analysis.  Return an object of type
 [`System`](@ref) containing the final system state, a matrix of surface panels
 (see [`SurfacePanel`](@ref) for each surface at each time step, a matrix of surface
 panel properties (see [`PanelProperties`](@ref)) for each surface at each time step,
-and a matrix of wake panels (see [`WakePanel`](@ref)) for each surface at each time
-step.
+a matrix of wake panels (see [`WakePanel`](@ref)) for each surface at each time
+step, a vector of lifting line geometries (see [`LiftingLineSegment`](@ref)) for
+each surface at each time step, and a vector of lifting line properties (see
+[`LiftingLineProperties`](@ref)) for each surface at each time step.
 
 # Arguments
- - `surfaces`:
-   - Grids of shape (3, nc+1, ns+1) which represent lifting surfaces
-     or
-   - Matrices of surface panels (see [`SurfacePanel`](@ref)) of shape
-    (nc, ns)
-    where `nc` is the number of chordwise panels and `ns` is the number of
+ - `grids`: Vector of grids of shape (3, nc+1, ns+1) which represent lifting
+    surfaces. Alternatively, a vector containing surface shapes/positions
+    at each time step (including at `t=0`) may be provided to model
+    moving/deforming lifting surfaces.
+ - `surfaces`: Matrices of surface panels (see [`SurfacePanel`](@ref)) of shape
+    `(nc, ns)` where `nc` is the number of chordwise panels and `ns` is the number of
     spanwise panels. Alternatively, a vector containing surface shapes/positions
     at each time step (including at `t=0`) may be provided to model
     moving/deforming lifting surfaces.
+ - `lifting_lines`: Vector of length-`ns` vectors of lifting line segments (see
+    [`LiftingLineSegment`](@ref)), containing a lifting line representation of each
+    surface
  - `reference`: Reference parameters (see [`Reference`](@ref))
  - `freestream`: Freestream parameters for each time step (see [`Freestream`](@ref))
  - `dt`: Time step vector
@@ -256,31 +319,89 @@ step.
  - `near_field_analysis`: Flag indicating whether a near field analysis should be
     performed to obtain panel velocities, circulation, and forces for the final
     time step. Defaults to `true`.
+ - `lifting_line_analysis`: Flag indicating whether force coefficients should be
+    calculated on a lifting line representation of the geometry. Defaults to
+    `false`.
+ - `viscous_lifting_line`: Flag indicating whether a viscous loading model
+    should be used when calculating the forces acting on the lifting line. Defaults to `false`.
+ - `drag_polar`: Function defining the drag coefficient as a function of lift
+    coefficient for each spanwise section. Used by the viscous lifting line model.
  - `derivatives`: Flag indicating whether the derivatives with respect to the
     freestream variables should be calculated for the final time step. Defaults
     to `true`.
+ - `xc`: Normalized chordwise location of the lifting line from the leading edge.
+    Defaults to `0.25`, indicating the lifting line will be constructed along the quarter chord
 """
 unsteady_analysis
 
-# same grids/surfaces at each time step
-function unsteady_analysis(surfaces::AbstractVector{<:AbstractArray}, ref, fs, dt;
+# same geometry at each time step, grid input
+function unsteady_analysis(grids::AbstractVector{<:AbstractArray{T, 3}}, ref, fs, dt;
+    nwake = fill(length(dt), length(grids)), fcore = (c, Δs) -> 1e-3, xc=0.25, kwargs...) where {T}
+
+    # pre-allocate system storage
+    system = System(grids; nw = nwake)
+
+    # generate surface panels
+    # grid_to_surface_panels returns an array of the panel corners *and* the
+    # Matrix of SurfacePanels, but we just want the latter, hence the [2].
+    surfaces = [grid_to_surface_panels(grid; fcore)[2] for grid in grids]
+
+    # create lifting lines from the grid
+    lifting_lines = lifting_line_geometry(grids; xc)
+
+    return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
+        kwargs..., nwake, calculate_influence_matrix = true)
+end
+
+# same geometry at each time step, surface and lifting line input
+function unsteady_analysis(surfaces::AbstractVector{<:AbstractMatrix{<:SurfacePanel}}, lifting_lines, ref, fs, dt;
     nwake = fill(length(dt), length(surfaces)), kwargs...)
 
     # pre-allocate system storage
     system = System(surfaces; nw = nwake)
 
-    return unsteady_analysis!(system, surfaces, ref, fs, dt;
+    return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
         kwargs..., nwake, calculate_influence_matrix = true)
 end
 
-# different grids/surfaces at each time step
-function unsteady_analysis(surfaces::AbstractVector{<:AbstractVector{<:AbstractArray}},
-    ref, fs, dt; nwake = fill(length(dt), length(surfaces[1])), kwargs...)
+# # different grids/surfaces at each time step
+# function unsteady_analysis(surfaces::AbstractVector{<:AbstractVector{<:AbstractArray}},
+#     ref, fs, dt; nwake = fill(length(dt), length(surfaces[1])), kwargs...)
+
+#     # pre-allocate system storage
+#     system = System(surfaces[1]; nw = nwake)
+
+#     return unsteady_analysis!(system, surfaces, ref, fs, dt;
+#         kwargs..., nwake, calculate_influence_matrix = true)
+# end
+
+# different geometry at each time step, grid input
+function unsteady_analysis(grids::AbstractVector{<:AbstractVector{<:AbstractArray{T, 3}}},
+    ref, fs, dt; nwake = fill(length(dt), length(grids[1])), fcore = (c, Δs) -> 1e-3, xc = 0.25, kwargs...) where {T}
+
+    # pre-allocate system storage
+    system = System(grids[1]; nw = nwake)
+
+    # generate surface panels
+    # grid_to_surface_panels returns an array of the panel corners *and* the
+    # Matrix of SurfacePanels, but we just want the latter, hence the [2].
+    surfaces = [[grid_to_surface_panels(grid; fcore)[2] for grid in grids_t] for grids_t in grids]
+
+    # create lifting lines from the grid
+    lifting_lines = [lifting_line_geometry(grids_t; xc) for grids_t in grids]
+
+    return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
+        kwargs..., nwake, calculate_influence_matrix = true)
+end
+
+# different geometry at each time step, surface and lifting line input
+function unsteady_analysis(surfaces::AbstractVector{<:AbstractVector{<:AbstractMatrix{<:SurfacePanel}}}, lifting_lines,
+    ref, fs, dt; nwake = fill(length(dt), length(surfaces[1])), kwargs...) where {T}
 
     # pre-allocate system storage
     system = System(surfaces[1]; nw = nwake)
 
-    return unsteady_analysis!(system, surfaces, ref, fs, dt;
+    return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
         kwargs..., nwake, calculate_influence_matrix = true)
 end
 
@@ -289,7 +410,7 @@ end
 
 Pre-allocated version of `unsteady_analysis`.
 """
-function unsteady_analysis!(system, surfaces, ref, fs, dt;
+function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMatrix{<:SurfacePanel}}, AbstractVector{<:AbstractVector{<:AbstractMatrix{<:SurfacePanel}}}}, lifting_lines, ref, fs, dt;
     symmetric = fill(false, length(system.surfaces)),
     initial_circulation = zero(system.Γ),
     initial_wakes = [Matrix{WakePanel{Float64}}(undef, 0, size(surfaces[i], 2)) for i = 1:length(system.surfaces)],
@@ -301,6 +422,9 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     save = 1:length(dt),
     calculate_influence_matrix = true,
     near_field_analysis = true,
+    lifting_line_analysis = false,
+    viscous_lifting_line = false,
+    drag_polar = nothing,
     derivatives = true)
 
     # float number type
@@ -325,9 +449,11 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     if surface_motion
         # surface moves, store initial surface panel locations
         initial_surfaces = surfaces[1]
+        initial_lifting_lines = lifting_lines[1]
     else
         # surface doesn't move
         initial_surfaces = surfaces
+        initial_lifting_lines = lifting_lines
     end
 
     # --- Update System Parameters --- #
@@ -356,16 +482,21 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     # --- Set Initial Simulation Variables --- #
 
     # store initial surface panels in `system`
-    if eltype(initial_surfaces) <: AbstractArray{<:Any, 3}
-        # initial surfaces are input as a grid, convert to surface panels
-        for isurf = 1:nsurf
-            update_surface_panels!(system.surfaces[isurf], initial_surfaces[isurf]; fcore)
-        end
-    else
-        # initial surfaces are input as matrices of surface panels
-        for isurf = 1:nsurf
-            system.surfaces[isurf] .= initial_surfaces[isurf]
-        end
+    # if eltype(initial_surfaces) <: AbstractArray{<:Any, 3}
+    #     # initial surfaces are input as a grid, convert to surface panels
+    #     for isurf = 1:nsurf
+    #         update_surface_panels!(system.surfaces[isurf], initial_surfaces[isurf]; fcore)
+    #     end
+    # else
+    #     # initial surfaces are input as matrices of surface panels
+    #     for isurf = 1:nsurf
+    #         system.surfaces[isurf] .= initial_surfaces[isurf]
+    #     end
+    # end
+    # initial surfaces are *always* input as matrices of surface panels now
+    for isurf = 1:nsurf
+        system.surfaces[isurf] .= initial_surfaces[isurf]
+        system.lifting_lines[isurf] .= initial_lifting_lines[isurf]
     end
 
     # store initial wake panels in `system`
@@ -390,6 +521,8 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
     surface_history = Vector{Vector{Matrix{SurfacePanel{TF}}}}(undef, length(save))
     property_history = Vector{Vector{Matrix{PanelProperties{TF}}}}(undef, length(save))
     wake_history = Vector{Vector{Matrix{WakePanel{TF}}}}(undef, length(save))
+    lifting_line_history = Vector{Vector{Vector{LiftingLineSegment{TF}}}}(undef, length(save))
+    lifting_line_property_history = Vector{Vector{Vector{LiftingLineProperties{TF}}}}(undef, length(save))
     isave = 1
 
     # # loop through all time steps
@@ -398,6 +531,9 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
         first_step = it == 1
         last_step = it == length(dt)
 
+        near_field_analysis_it = it in save || (last_step && near_field_analysis)
+        lifting_line_analysis_it = lifting_line_analysis && near_field_analysis_it
+        viscous_lifting_line_it = viscous_lifting_line && lifting_line_analysis_it
         if surface_motion
             propagate_system!(system, surfaces[1+it], fs[it], dt[it];
                 additional_velocity,
@@ -405,7 +541,9 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 nwake = iwake,
                 eta = 0.25,
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
-                near_field_analysis = it in save || (last_step && near_field_analysis),
+                near_field_analysis = near_field_analysis_it,
+                lifting_line_analysis = lifting_line_analysis_it,
+                viscous_lifting_line = viscous_lifting_line_it,
                 derivatives = last_step && derivatives)
         else
             propagate_system!(system, fs[it], dt[it];
@@ -414,7 +552,9 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
                 nwake = iwake,
                 eta = 0.25,
                 calculate_influence_matrix = first_step && calculate_influence_matrix,
-                near_field_analysis = it in save || (last_step && near_field_analysis),
+                near_field_analysis = near_field_analysis_it,
+                lifting_line_analysis = lifting_line_analysis_it,
+                viscous_lifting_line = viscous_lifting_line_it,
                 derivatives = last_step && derivatives)
         end
 
@@ -430,13 +570,15 @@ function unsteady_analysis!(system, surfaces, ref, fs, dt;
             surface_history[isave] = [copy(system.surfaces[isurf]) for isurf = 1:nsurf]
             property_history[isave] = [copy(system.properties[isurf]) for isurf = 1:nsurf]
             wake_history[isave] = [system.wakes[isurf][1:iwake[isurf], :] for isurf = 1:nsurf]
+            lifting_line_history[isave] = [copy(system.lifting_lines[isurf]) for isurf = 1:nsurf]
+            lifting_line_property_history[isave] = [copy(system.lifting_line_properties[isurf]) for isurf = 1:nsurf]
             isave += 1
         end
 
     end
 
     # return the modified system and time history
-    return system, surface_history, property_history, wake_history
+    return system, surface_history, property_history, wake_history, lifting_line_history, lifting_line_property_history
 end
 
 """
@@ -467,6 +609,13 @@ unsteady vortex lattice method system of equations.
     the influence matrix will always be recalculated.
  - `near_field_analysis`: Flag indicating whether a near field analysis should be
     performed to obtain panel velocities, circulation, and forces.
+ - `lifting_line_analysis`: Flag indicating whether force coefficients should be
+    calculated on a lifting line representation of the geometry. Defaults to
+    `false`.
+ - `viscous_lifting_line`: Flag indicating whether a viscous loading model
+    should be used when calculating the forces acting on the lifting line. Defaults to `false`.
+ - `drag_polar`: Function defining the drag coefficient as a function of lift
+    coefficient for each spanwise section. Used by the viscous lifting line model.
  - `derivatives`: Flag indicating whether the derivatives with respect to the
     freestream variables should be calculated.
 """
@@ -484,7 +633,21 @@ function propagate_system!(system, surfaces, fs, dt;
     eta,
     calculate_influence_matrix,
     near_field_analysis,
+    lifting_line_analysis,
+    viscous_lifting_line = false,
+    drag_polar = nothing,
     derivatives)
+
+    # This probably isn't the "right" way to throw an error.
+    if lifting_line_analysis && !near_field_analysis
+        @error "lifting line analysis requires nearfield analysis"
+    end
+    if viscous_lifting_line && !lifting_line_analysis
+        @error "viscous lifting line analysis requires lifting_line_analysis"
+    end
+    if viscous_lifting_line && (drag_polar === nothing)
+        @error "viscous lifting line requires a drag polar"
+    end
 
     # NOTE: Each step models the transition from `t = t[it]` to `t = [it+1]`
     # (e.g. the first step models from `t = 0` to `t = dt`).  Properties are
@@ -504,8 +667,11 @@ function propagate_system!(system, surfaces, fs, dt;
 
     # unpack system storage (including state variables)
     previous_surfaces = system.previous_surfaces
+    previous_lifting_lines = system.previous_lifting_lines
     current_surfaces = system.surfaces
+    current_lifting_lines = system.lifting_lines
     properties = system.properties
+    lifting_line_properties = system.lifting_line_properties
     dproperties = system.dproperties
     wakes = system.wakes
     wake_velocities = system.V
@@ -527,22 +693,26 @@ function propagate_system!(system, surfaces, fs, dt;
     # move geometry and calculate velocities for this time step
     if surface_motion
 
-        # check if grids are used to represent the new surfaces
-        grid_input = eltype(surfaces) <: AbstractArray{<:Any, 3}
+        # # check if grids are used to represent the new surfaces
+        # grid_input = eltype(surfaces) <: AbstractArray{<:Any, 3}
 
         for isurf = 1:nsurf
 
             # save current surfaces as previous surfaces
             previous_surfaces[isurf] .= current_surfaces[isurf]
+            previous_lifting_lines[isurf] .= current_lifting_lines[isurf]
 
             # set new surface shape...
-            if grid_input
-                # ...based on grid inputs
-                update_surface_panels!(current_surfaces[isurf], surfaces[isurf]; fcore)
-            else
-                # ...based on surface panels
-                current_surfaces[isurf] .= surfaces[isurf]
-            end
+            # if grid_input
+            #     # ...based on grid inputs
+            #     update_surface_panels!(current_surfaces[isurf], surfaces[isurf]; fcore)
+            # else
+            #     # ...based on surface panels
+            #     current_surfaces[isurf] .= surfaces[isurf]
+            # end
+            # only allowing surface panel input now
+            current_surfaces[isurf] .= surfaces[isurf]
+            current_lifting_lines[isurf] .= lifting_lines[isurf]
 
             # calculate surface velocities
             get_surface_velocities!(Vcp[isurf], Vh[isurf], Vv[isurf], Vte[isurf],
@@ -623,6 +793,17 @@ function propagate_system!(system, surfaces, fs, dt;
                 ref, fs, Γ; dΓdt, additional_velocity, Vh, Vv,
                 symmetric, nwake, surface_id, wake_finite_core,
                 wake_shedding_locations, trailing_vortices, xhat)
+        end
+        if lifting_line_analysis
+            # Do the lifting line stuff.
+            lifting_line_forces!(lifting_line_properties, current_lifting_lines, properties, current_surfaces, ref)
+            if viscous_lifting_line
+                lifting_line_viscous_forces!(lifting_line_properties,
+                    current_lifting_lines, drag_polar, properties,
+                    current_surfaces, wakes, ref, fs, Γ; additional_velocity,
+                    Vh, symmetric, nwake, surface_id, wake_finite_core,
+                    wake_shedding_locations, trailing_vorticies, xhat)
+            end
         end
 
         # save flag indicating that a near-field analysis has been performed
