@@ -751,23 +751,40 @@ function body_forces(surfaces, properties, ref, fs, symmetric, frame)
     return CF, CM
 end
 
+
 """
-    body_viscous_forces(r, c, cfv, reference, freestream, symmetric, frame)
+    body_viscous_forces(system; kwargs...)
 
-Return the viscous body force coefficients given the panel properties for `surfaces`
+Return the viscous body force coefficients for the lifting surfaces defined in `system`
 
-The viscous lifting line coefficients must be expressed in the [`Body()`](@ref) frame.
+Note that this function assumes that a near-field and viscous lifting line
+analyses have already been performed.
 
- - `r`: Vector with length equal to the number of surfaces, with each element
-    being a matrix with size (3, ns+1) which contains the x, y, and z coordinates
-    of the resulting lifting line coordinates
- - `c`: Vector with length equal to the number of surfaces, with each element
-    being a vector of length `ns+1` which contains the chord lengths at each
-    lifting line coordinate.
- - `cfv`: Vector with length equal to the number of surfaces, with each element
-    being a matrix with size (3, ns) which contains the x, y, and z direction
-    viscous force coefficients (per unit span) for each spanwise segment,
-    expressed in the [`Body()`](@ref) reference frame.
+# Arguments
+ - `system`: Object of type [`System`](@ref) which holds system properties
+
+# Keyword Arguments
+ - `frame`: frame in which to return `CF` and `CM`, options are [`Body()`](@ref) (default),
+   [`Stability()`](@ref), and [`Wind()`](@ref)`
+"""
+function body_viscous_forces(system; frame = Body())
+    @assert system.viscous_lifting_line[] "Viscous lifting line analysis required"
+
+    # unpack parameters stored in `system`
+    lifting_line_properties = system.lifting_line_properties # lifting line properties
+    ref = system.reference[] # reference parameters
+    fs = system.freestream[] # freestream parameters
+    symmetric = system.symmetric # symmetric flag for each surface
+
+    return body_viscous_forces(lifting_line_properties, ref, fs, symmetric, frame)
+end
+
+"""
+    body_viscous_forces(lifting_line_properties, reference, freestream, symmetric, frame)
+
+Return the viscous body force coefficients acting on the lifting lines
+
+ - `lifting_line_properties`: Vector of vector of [`LiftingLineProperties`](@ref)
  - `reference`: Reference parameters (see [`Reference`](@ref))
  - `freestream`: Freestream parameters (see [`Freestream`]@ref)
  - `symmetric`: (required) Flag for each surface indicating whether a mirror image
@@ -775,36 +792,41 @@ The viscous lifting line coefficients must be expressed in the [`Body()`](@ref) 
  - `frame`: frame in which to return `CF` and `CM`, options are [`Body()`](@ref) (default),
    [`Stability()`](@ref), and [`Wind()`](@ref)
 """
-function body_viscous_forces(r, c, cfv, ref, fs, symmetric, frame)
-    TF = promote_type(eltype(eltype(r)), eltype(c), eltype(eltype(cfv)), eltype(ref), eltype(fs))
+function body_viscous_forces(lifting_line_properties, ref, fs, symmetric, frame)
+    TF = promote_type(eltype(eltype(eltype(lifting_line_properties))), eltype(ref), eltype(fs))
 
     # initialize body force coefficients
     CF = @SVector zeros(TF, 3)
     CM = @SVector zeros(TF, 3)
 
     # loop through all surfaces
-    for isurf = 1:length(r)
+    for isurf = 1:length(lifting_line_properties)
 
         # initialize surface contribution to body force coefficients
         CFi = @SVector zeros(TF, 3)
         CMi = @SVector zeros(TF, 3)
 
         # loop through all the lifting line elements for this surface
-        ns = size(r[isurf], 2)-1
+        # ns = size(r[isurf], 2)-1
+        ns = length(lifting_line_properties[isurf])
         for j = 1:ns
             # calculate segment length
-            rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
-            rrs = SVector(r[isurf][1,j+1], r[isurf][2,j+1], r[isurf][3,j+1])
-            ds = norm(rrs - rls)
+            # rls = SVector(r[isurf][1,j], r[isurf][2,j], r[isurf][3,j])
+            # rrs = SVector(r[isurf][1,j+1], r[isurf][2,j+1], r[isurf][3,j+1])
+            # ds = norm(rrs - rls)
+            ds = lifting_line_properties[isurf][j].ds
             # calculate reference location
-            rs = (rls + rrs)/2
+            # rs = (rls + rrs)/2
+            rs = lifting_line_properties[isurf][j].r
             # calculate reference chord
-            cs = (c[isurf][j] + c[isurf][j+1])/2
+            # cs = (c[isurf][j] + c[isurf][j+1])/2
+            cs = lifting_line_properties[isurf][j].c
             # add viscous loading for this spanwise station
             Δr = rs - ref.r
-            cf = @view cfv[isurf][:, j]
+            # cf = @view cfv[isurf][:, j]
+            cf = cfv[isurf][j].cfv
             # adjust non-dimensionalization to match what body_forces uses
-            cf *= ds*cs/ref.S
+            cf *= ds*cs/ref.S  # LiftingLineProperties.cfv is a SVector{3,TF}, so this won't mutate lifting_line_properties
             CFi += cf
             CMi += cross(Δr, cf)
         end
@@ -1090,7 +1112,7 @@ Return the force and moment coefficients (per unit span) for each spanwise segme
 of a lifting line representation of the geometry.
 
 This function requires that a lifting line analysis has been performed on `system`
-to obtain panel forces.
+to obtain lifting line forces.
 
 # Arguments
  - `system`: Object of type [`System`](@ref) that holds precalculated
@@ -1129,6 +1151,61 @@ function lifting_line_coefficients(system; frame=Body())
         for j = 1:ns
             cfj = system.lifting_line_properties[isurf][j].cf
             cmj = system.lifting_line_properties[isurf][j].cm
+            cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
+            cf[isurf][:,j] = cfj
+            cm[isurf][:,j] = cmj
+        end
+    end
+
+    return cf, cm
+end
+
+"""
+    lifting_line_viscous_coefficients(system; frame=Body())
+
+Return the viscous force and moment coefficients (per unit span) for each
+spanwise segment of a lifting line representation of the geometry.
+
+This function requires that a viscous lifting line analysis has been performed
+on `system` to obtain lifting line forces.
+
+# Arguments
+ - `system`: Object of type [`System`](@ref) that holds precalculated
+    system properties.
+
+# Keyword Arguments
+ - `frame`: frame in which to return `cf` and `cm`, possible options are
+    [`Body()`](@ref) (default), [`Stability()`](@ref), and [`Wind()`](@ref)`
+
+# Return Arguments:
+ - `cfv`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    force coefficients (per unit span) for each spanwise segment.
+ - `cmv`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    moment coefficients (per unit span) for each spanwise segment.
+"""
+function lifting_line_viscous_coefficients(system; frame=Body())
+    # check that a near field analysis has been performed
+    @assert system.viscous_lifting_line[] "Viscous lifting line analysis required"
+
+    # extract reference properties
+    ref = system.reference[]
+    fs = system.freestream[]
+
+    # number of surfaces
+    nsurf = length(system.surfaces)
+
+    TF = eltype(system)
+    cf = Vector{Matrix{TF}}(undef, nsurf)
+    cm = Vector{Matrix{TF}}(undef, nsurf)
+    for isurf = 1:nsurf
+        ns = size(system.surfaces[isurf], 2)
+        cf[isurf] = Matrix{TF}(undef, 3, ns)
+        cm[isurf] = Matrix{TF}(undef, 3, ns)
+        for j = 1:ns
+            cfj = system.lifting_line_properties[isurf][j].cfv
+            cmj = system.lifting_line_properties[isurf][j].cmv
             cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
             cf[isurf][:,j] = cfj
             cm[isurf][:,j] = cmj

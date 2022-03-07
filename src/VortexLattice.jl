@@ -46,7 +46,7 @@ include("nearfield.jl")
 export body_forces
 export body_viscous_forces
 export body_forces_history
-export lifting_line_coefficients
+export lifting_line_coefficients, lifting_line_viscous_coefficients
 
 include("farfield.jl")
 export far_field_drag
