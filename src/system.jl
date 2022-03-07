@@ -137,6 +137,8 @@ struct System{TF}
     trailing_vortices::Vector{Bool}
     xhat::Array{SVector{3, TF}, 0}
     near_field_analysis::Array{Bool, 0}
+    lifting_line_analysis::Array{Bool, 0}
+    viscous_lifting_line::Array{Bool, 0}
     derivatives::Array{Bool, 0}
     dw::NTuple{5, Vector{TF}}
     dΓ::NTuple{5, Vector{TF}}
@@ -242,8 +244,8 @@ function System(TF::Type, nc, ns; nw = zero(nc))
     properties = [Matrix{PanelProperties{TF}}(undef, nc[i], ns[i]) for i = 1:nsurf]
     wakes = [Matrix{WakePanel{TF}}(undef, nw[i], ns[i]) for i = 1:nsurf]
     trefftz = [Vector{TrefftzPanel{TF}}(undef, ns[i]) for i = 1:nsurf]
-    lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i in = 1:nsurf]
-    lifting_line_properties = [Vector{LiftingLineProperties{TF}}(undef, ns[i]) for i in = 1:nsurf]
+    lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i = 1:nsurf]
+    lifting_line_properties = [Vector{LiftingLineProperties{TF}}(undef, ns[i]) for i = 1:nsurf]
     reference = Array{Reference{TF}}(undef)
     freestream = Array{Freestream{TF}}(undef)
     symmetric = [false for i = 1:nsurf]
@@ -253,13 +255,15 @@ function System(TF::Type, nc, ns; nw = zero(nc))
     trailing_vortices = [false for i = 1:nsurf]
     xhat = fill(SVector{3,TF}(1, 0, 0))
     near_field_analysis = fill(false)
+    lifting_line_analysis = fill(false)
+    viscous_lifting_line = fill(false)
     derivatives = fill(false)
     dw = Tuple(zeros(TF, N) for i = 1:5)
     dΓ = Tuple(zeros(TF, N) for i = 1:5)
     dproperties = Tuple([Matrix{PanelProperties{TF}}(undef, nc[i], ns[i]) for i = 1:length(surfaces)] for j = 1:5)
     wake_shedding_locations = [fill((@SVector zeros(TF, 3)), ns[i]+1) for i = 1:nsurf]
     previous_surfaces = [Matrix{SurfacePanel{TF}}(undef, nc[i], ns[i]) for i = 1:nsurf]
-    previous_lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i in = 1:nsurf]
+    previous_lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i = 1:nsurf]
     Vcp = [fill((@SVector zeros(TF, 3)), nc[i], ns[i]) for i = 1:nsurf]
     Vh = [fill((@SVector zeros(TF, 3)), nc[i]+1, ns[i]) for i = 1:nsurf]
     Vv = [fill((@SVector zeros(TF, 3)), nc[i], ns[i]+1) for i = 1:nsurf]
@@ -268,7 +272,7 @@ function System(TF::Type, nc, ns; nw = zero(nc))
 
     return System{TF}(AIC, w, Γ, V, surfaces, properties, wakes, trefftz, lifting_lines, lifting_line_properties,
         reference, freestream, symmetric, nwake, surface_id, wake_finite_core,
-        trailing_vortices, xhat, near_field_analysis, derivatives,
+        trailing_vortices, xhat, near_field_analysis, lifting_line_analysis, viscous_lifting_line, derivatives,
         dw, dΓ, dproperties, wake_shedding_locations, previous_surfaces, previous_lifting_lines, Vcp, Vh,
         Vv, Vte, dΓdt)
 end

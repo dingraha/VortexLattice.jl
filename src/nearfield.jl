@@ -514,6 +514,11 @@ function lifting_line_forces!(lifting_line_properties, lifting_lines, props, sur
     # number of surfaces
     nsurf = length(surfaces)
 
+    TF = promote_type(eltype(eltype(eltype(lifting_line_properties))),
+                      eltype(eltype(eltype(lifting_lines))),
+                      eltype(eltype(eltype(props))),
+                      eltype(eltype(eltype(surfaces))))
+
     # iterate through each lifting surface
     for isurf = 1:nsurf
         nc, ns = size(surfaces[isurf])
@@ -521,7 +526,6 @@ function lifting_line_forces!(lifting_line_properties, lifting_lines, props, sur
         panels = surfaces[isurf]
         properties = props[isurf]
         lifting_line = lifting_lines[isurf]
-        T = eltype(lifting_line_properties[isurf])
         for j = 1:ns
             # calculate segment length
             rls = lifting_line[j].rl
@@ -531,11 +535,11 @@ function lifting_line_forces!(lifting_line_properties, lifting_lines, props, sur
             rs = (rls + rrs)/2
             # calculate reference chord
             # cs = (c[isurf][j] + c[isurf][j+1])/2
-            cs = (lifting_line[j].c_l + lifting_line[j].c_r)/2
+            cs = (lifting_line[j].chord_l + lifting_line[j].chord_r)/2
 
             # calculate section force and moment coefficients
-            cfj = @SVector zeros(T, 3)
-            cmj = @SVector zeros(T, 3)
+            cfj = @SVector zeros(TF, 3)
+            cmj = @SVector zeros(TF, 3)
             for i = 1:nc
                 # add influence of bound vortex
                 rb = top_center(panels[i,j])
@@ -1077,6 +1081,61 @@ function body_forces_history(system, surface_history::AbstractVector{<:AbstractV
     end
 
     return CF, CM
+end
+
+"""
+    lifting_line_coefficients(system; frame=Body())
+
+Return the force and moment coefficients (per unit span) for each spanwise segment
+of a lifting line representation of the geometry.
+
+This function requires that a lifting line analysis has been performed on `system`
+to obtain panel forces.
+
+# Arguments
+ - `system`: Object of type [`System`](@ref) that holds precalculated
+    system properties.
+
+# Keyword Arguments
+ - `frame`: frame in which to return `cf` and `cm`, possible options are
+    [`Body()`](@ref) (default), [`Stability()`](@ref), and [`Wind()`](@ref)`
+
+# Return Arguments:
+ - `cf`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    force coefficients (per unit span) for each spanwise segment.
+ - `cm`: Vector with length equal to the number of surfaces, with each element
+    being a matrix with size (3, ns) which contains the x, y, and z direction
+    moment coefficients (per unit span) for each spanwise segment.
+"""
+function lifting_line_coefficients(system; frame=Body())
+    # check that a near field analysis has been performed
+    @assert system.lifting_line_analysis[] "Lifting line analysis required"
+
+    # extract reference properties
+    ref = system.reference[]
+    fs = system.freestream[]
+
+    # number of surfaces
+    nsurf = length(system.surfaces)
+
+    TF = eltype(system)
+    cf = Vector{Matrix{TF}}(undef, nsurf)
+    cm = Vector{Matrix{TF}}(undef, nsurf)
+    for isurf = 1:nsurf
+        ns = size(system.surfaces[isurf], 2)
+        cf[isurf] = Matrix{TF}(undef, 3, ns)
+        cm[isurf] = Matrix{TF}(undef, 3, ns)
+        for j = 1:ns
+            cfj = system.lifting_line_properties[isurf][j].cf
+            cmj = system.lifting_line_properties[isurf][j].cm
+            cfj, cmj = body_to_frame(cfj, cmj, ref, fs, frame)
+            cf[isurf][:,j] = cfj
+            cm[isurf][:,j] = cmj
+        end
+    end
+
+    return cf, cm
 end
 
 # """

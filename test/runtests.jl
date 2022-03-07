@@ -55,8 +55,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -81,8 +82,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -137,8 +139,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -193,8 +196,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -264,8 +268,9 @@ end
     end
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -336,8 +341,9 @@ end
     end
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -446,9 +452,10 @@ end
     translate!(vtail, [4.0, 0.0, 0.0])
 
     surfaces = [wing, htail, vtail]
+    lifting_lines = lifting_line_geometry([wgrid, hgrid, vgrid])
     surface_id = [1, 1, 1]
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric, surface_id=surface_id)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric, surface_id=surface_id)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -554,9 +561,10 @@ end
     translate!(vtail, [4.0, 0.0, 0.0])
 
     surfaces = [wing, htail, vtail]
+    lifting_lines = lifting_line_geometry([wgrid, hgrid, vgrid])
     surface_id = [1, 2, 3]
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric, derivatives = false)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric, derivatives = false)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -612,8 +620,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -669,8 +678,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -728,8 +738,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     CF, CM = body_forces(system; frame=Stability())
 
@@ -781,8 +792,9 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric)
 
     dCF, dCM = stability_derivatives(system)
 
@@ -856,12 +868,11 @@ end
 
     grids = [grid]
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry(grids)
 
-    system = steady_analysis(surfaces, ref, fs; symmetric=symmetric)
+    system = steady_analysis(surfaces, lifting_lines, ref, fs; symmetric=symmetric, near_field_analysis=true, lifting_line_analysis=true)
 
-    r_ll, c_ll = lifting_line_geometry(grids)
-
-    cf, cm = lifting_line_coefficients(system, r_ll, c_ll; frame=Stability())
+    cf, cm = lifting_line_coefficients(system; frame=Stability())
 
     cl_avl = [0.2618, 0.2646, 0.2661, 0.2664, 0.2654, 0.2628, 0.2584, 0.2513,
         0.2404, 0.2233, 0.1952, 0.1434]
@@ -1365,9 +1376,10 @@ end
         mirror=mirror, spacing_s=spacing_s, spacing_c=spacing_c)
 
     surfaces = [surface]
+    lifting_lines = lifting_line_geometry([grid])
 
     # run analysis
-    system, surface_history, property_history, wake_history = unsteady_analysis(surfaces, ref, fs, dt;
+    system, surface_history, property_history, wake_history, lifting_line_history, lifting_line_property_history = unsteady_analysis(surfaces, lifting_lines, ref, fs, dt;
         symmetric=symmetric)
 
     # extract forces at each time step
@@ -1449,13 +1461,14 @@ end
     translate!(vtail, [4.0, 0.0, 0.0])
 
     surfaces = [wing, htail, vtail]
+    lifting_lines = lifting_line_geometry([wgrid, hgrid, vgrid])
     surface_id = [1, 2, 3]
 
     # t
     t = range(0.0, 10.0, step=0.2)
     dt = t[2:end] - t[1:end-1]
 
-    system, surface_history, property_history, wake_history = unsteady_analysis(surfaces, ref, fs, dt; symmetric)
+    system, surface_history, property_history, wake_history, lifting_line_history, lifting_line_property_history = unsteady_analysis(surfaces, lifting_lines, ref, fs, dt; symmetric)
 
     # extract forces at each time step
     CF, CM = body_forces_history(system, surface_history, property_history; frame=Wind())

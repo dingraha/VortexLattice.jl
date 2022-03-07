@@ -76,7 +76,7 @@ function steady_analysis(grids::AbstractVector{<:AbstractArray{<:Any, 3}}, refer
     surfaces = [grid_to_surface_panels(grid; fcore)[2] for grid in grids]
 
     # create lifting lines from the grids
-    lifting_lines = lifting_line_geometry(grids; xc)
+    lifting_lines = lifting_line_geometry(grids, xc)
 
     return steady_analysis!(system, surfaces, lifting_lines, reference, freestream; kwargs...,
         calculate_influence_matrix = true)
@@ -257,6 +257,7 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
     # save flags indicating whether certain analyses have been performed
     system.near_field_analysis[] = near_field_analysis
     system.lifting_line_analysis[] = lifting_line_analysis
+    system.viscous_lifting_line[] = viscous_lifting_line
     system.derivatives[] = derivatives
 
     # return the modified system
@@ -347,7 +348,7 @@ function unsteady_analysis(grids::AbstractVector{<:AbstractArray{T, 3}}, ref, fs
     surfaces = [grid_to_surface_panels(grid; fcore)[2] for grid in grids]
 
     # create lifting lines from the grid
-    lifting_lines = lifting_line_geometry(grids; xc)
+    lifting_lines = lifting_line_geometry(grids, xc)
 
     return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
         kwargs..., nwake, calculate_influence_matrix = true)
@@ -388,7 +389,7 @@ function unsteady_analysis(grids::AbstractVector{<:AbstractVector{<:AbstractArra
     surfaces = [[grid_to_surface_panels(grid; fcore)[2] for grid in grids_t] for grids_t in grids]
 
     # create lifting lines from the grid
-    lifting_lines = [lifting_line_geometry(grids_t; xc) for grids_t in grids]
+    lifting_lines = [lifting_line_geometry(grids_t, xc) for grids_t in grids]
 
     return unsteady_analysis!(system, surfaces, lifting_lines, ref, fs, dt;
         kwargs..., nwake, calculate_influence_matrix = true)
@@ -426,6 +427,17 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     viscous_lifting_line = false,
     drag_polar = nothing,
     derivatives = true)
+
+    # This probably isn't the "right" way to throw an error.
+    if lifting_line_analysis && !near_field_analysis
+        @error "lifting line analysis requires nearfield analysis"
+    end
+    if viscous_lifting_line && !lifting_line_analysis
+        @error "viscous lifting line analysis requires lifting_line_analysis"
+    end
+    if (drag_polar === nothing) && viscous_lifting_line
+        @error "viscous lifting line requires a drag polar"
+    end
 
     # float number type
     TF = eltype(system)
@@ -806,8 +818,10 @@ function propagate_system!(system, surfaces, fs, dt;
             end
         end
 
-        # save flag indicating that a near-field analysis has been performed
+        # save flag indicating that various analyses has been performed
         system.near_field_analysis[] = near_field_analysis
+        system.lifting_line_analysis[] = lifting_line_analysis
+        system.viscous_lifting_line[] = viscous_lifting_line
     end
 
     # save flag indicating that derivatives wrt freestream variables have been obtained
