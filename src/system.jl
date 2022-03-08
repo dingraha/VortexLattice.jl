@@ -37,6 +37,42 @@ Base.eltype(::Type{PanelProperties{TF}}) where TF = TF
 Base.eltype(::PanelProperties{TF}) where TF = TF
 
 """
+    LiftingLineProperties
+
+Lifting line geometry and loading properties post-processed from the vortex lattice method analysis.
+
+**Fields**
+ - `r`: Reference location (midpoint) of the lifting line segment
+ - `c`: Reference chord of the lifting line segment 
+ - `ds`: Lifting line segment length
+ - `cf`: Inviscid force coefficient, normalized by `1/2*RHO*ds*c`
+ - `cfv`: Viscous force coefficient, normalized by `1/2*RHO*ds*c`
+ - `cm`: Inviscid moment coefficient, normalized by `1/2*RHO*ds*c^2`
+ - `cmv`: Viscous moment coefficient, normalized by `1/2*RHO*ds*c^2`
+"""
+struct LiftingLineProperties{TF}
+  r::SVector{3, TF}
+  c::TF
+  ds::TF
+  cf::SVector{3, TF}
+  cfv::SVector{3, TF}
+  cm::SVector{3, TF}
+  cmv::SVector{3, TF}
+end
+
+# constructor
+function LiftingLineProperties(r, c, ds, cf, cfv, cm, cmv)
+
+    TF = promote_type(typeof(r), typeof(c), eltype(ds), eltype(cf),
+        eltype(cfv), typeof(cm), typeof(cmv))
+
+    return LiftingLineProperties{TF}(r, c, ds, cf, cfv, cm, cmv)
+end
+
+Base.eltype(::Type{LiftingLineProperties{TF}}) where TF = TF
+Base.eltype(::LiftingLineProperties{TF}) where TF = TF
+
+"""
     System{TF}
 
 Contains pre-allocated storage for internal system variables.
@@ -50,6 +86,10 @@ Contains pre-allocated storage for internal system variables.
  - `properties`: Surface panel properties for each surface
  - `wakes`: Wake panel properties for each surface
  - `trefftz`: Trefftz panels associated with each surface
+ - `lifting_lines`: Lifting lines associated with each surface, each represented
+    as a Vector of [`LiftingLineSegment`](@ref)
+ - `lifting_line_properties`: Lifting line properties associated with each
+    surface, each represented as a Vector of [`LiftingLineProperties`](@ref)
  - `reference`: Pointer to reference parameters associated with the system (see [`Reference`](@ref))
  - `freestream`: Pointer to current freestream parameters associated with the system (see [`Freestream`](@ref))
  - `symmetric`: Flags indicating whether each surface is symmetric across the X-Z plane
@@ -68,6 +108,9 @@ Contains pre-allocated storage for internal system variables.
  - `dΓ`: Derivatives of the circulation strength with respect to the freestream variables
  - `dproperties`: Derivatives of the panel properties with respect to the freestream variables
  - `wake_shedding_locations`: Wake shedding locations for each surface
+ - `previous_surfaces`: Surfaces for the previous time step, represented by matrices of surface panels
+ - `previous_lifting_lines`: Lifting lines associated with each surface for the
+    previous time step, each represented as a Vector of [`LiftingLineSegment`](@ref)
  - `Vcp`: Velocity due to surface motion at the control points
  - `Vh`: Velocity due to surface motion at the horizontal bound vortex centers
  - `Vv`: Velocity due to surface motion at the vertical bound vortex centers
@@ -83,6 +126,8 @@ struct System{TF}
     properties::Vector{Matrix{PanelProperties{TF}}}
     wakes::Vector{Matrix{WakePanel{TF}}}
     trefftz::Vector{Vector{TrefftzPanel{TF}}}
+    lifting_lines::Vector{Vector{LiftingLineSegment{TF}}}
+    lifting_line_properties::Vector{Vector{LiftingLineProperties{TF}}}
     reference::Array{Reference{TF}, 0}
     freestream::Array{Freestream{TF}, 0}
     symmetric::Vector{Bool}
@@ -92,12 +137,15 @@ struct System{TF}
     trailing_vortices::Vector{Bool}
     xhat::Array{SVector{3, TF}, 0}
     near_field_analysis::Array{Bool, 0}
+    lifting_line_analysis::Array{Bool, 0}
+    viscous_lifting_line::Array{Bool, 0}
     derivatives::Array{Bool, 0}
     dw::NTuple{5, Vector{TF}}
     dΓ::NTuple{5, Vector{TF}}
     dproperties::NTuple{5, Vector{Matrix{PanelProperties{TF}}}}
     wake_shedding_locations::Vector{Vector{SVector{3,TF}}}
     previous_surfaces::Vector{Matrix{SurfacePanel{TF}}}
+    previous_lifting_lines::Vector{Vector{LiftingLineSegment{TF}}}
     Vcp::Vector{Matrix{SVector{3, TF}}}
     Vh::Vector{Matrix{SVector{3, TF}}}
     Vv::Vector{Matrix{SVector{3, TF}}}
@@ -199,6 +247,8 @@ function System(TF::Type, nc, ns; nw = zero(nc), prandtl_glauert = false)
     properties = [Matrix{PanelProperties{TF}}(undef, nc[i], ns[i]) for i = 1:nsurf]
     wakes = [Matrix{WakePanel{TF}}(undef, nw[i], ns[i]) for i = 1:nsurf]
     trefftz = [Vector{TrefftzPanel{TF}}(undef, ns[i]) for i = 1:nsurf]
+    lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i = 1:nsurf]
+    lifting_line_properties = [Vector{LiftingLineProperties{TF}}(undef, ns[i]) for i = 1:nsurf]
     reference = Array{Reference{TF}}(undef)
     freestream = Array{Freestream{TF}}(undef)
     symmetric = [false for i = 1:nsurf]
@@ -208,22 +258,25 @@ function System(TF::Type, nc, ns; nw = zero(nc), prandtl_glauert = false)
     trailing_vortices = [false for i = 1:nsurf]
     xhat = fill(SVector{3,TF}(1, 0, 0))
     near_field_analysis = fill(false)
+    lifting_line_analysis = fill(false)
+    viscous_lifting_line = fill(false)
     derivatives = fill(false)
     dw = Tuple(zeros(TF, N) for i = 1:5)
     dΓ = Tuple(zeros(TF, N) for i = 1:5)
     dproperties = Tuple([Matrix{PanelProperties{TF}}(undef, nc[i], ns[i]) for i = 1:length(surfaces)] for j = 1:5)
     wake_shedding_locations = [fill((@SVector zeros(TF, 3)), ns[i]+1) for i = 1:nsurf]
     previous_surfaces = [Matrix{SurfacePanel{TF}}(undef, nc[i], ns[i]) for i = 1:nsurf]
+    previous_lifting_lines = [Vector{LiftingLineSegment{TF}}(undef, ns[i]) for i = 1:nsurf]
     Vcp = [fill((@SVector zeros(TF, 3)), nc[i], ns[i]) for i = 1:nsurf]
     Vh = [fill((@SVector zeros(TF, 3)), nc[i]+1, ns[i]) for i = 1:nsurf]
     Vv = [fill((@SVector zeros(TF, 3)), nc[i], ns[i]+1) for i = 1:nsurf]
     Vte = [fill((@SVector zeros(TF, 3)), ns[i]+1) for i = 1:nsurf]
     dΓdt = zeros(TF, N)
 
-    return System{TF}(AIC, w, Γ, V, surfaces, properties, wakes, trefftz,
+    return System{TF}(AIC, w, Γ, V, surfaces, properties, wakes, trefftz, lifting_lines, lifting_line_properties,
         reference, freestream, symmetric, nwake, surface_id, wake_finite_core,
-        trailing_vortices, xhat, near_field_analysis, derivatives,
-        dw, dΓ, dproperties, wake_shedding_locations, previous_surfaces, Vcp, Vh,
+        trailing_vortices, xhat, near_field_analysis, lifting_line_analysis, viscous_lifting_line, derivatives,
+        dw, dΓ, dproperties, wake_shedding_locations, previous_surfaces, previous_lifting_lines, Vcp, Vh,
         Vv, Vte, dΓdt, fill(prandtl_glauert))
 end
 

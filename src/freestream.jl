@@ -23,6 +23,10 @@ function Freestream(Vinf, alpha, beta, Omega, speedofsound)
     return Freestream{TF}(Vinf, alpha, beta, Omega, speedofsound)
 end
 
+# Arbitrarily assume a Mach=0.05 freestream velocity if speed of sound isn't
+# given.
+Freestream(Vinf, alpha, beta, Omega) = Freestream(Vinf, alpha, beta, Omega, Vinf/0.05)
+
 Base.eltype(::Type{Freestream{TF}}) where TF = TF
 Base.eltype(::Freestream{TF}) where TF = TF
 

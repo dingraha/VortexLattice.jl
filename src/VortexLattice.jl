@@ -9,7 +9,7 @@ using WriteVTK
 const RHO = 1.0
 
 include("panel.jl")
-export SurfacePanel, WakePanel, TrefftzPanel
+export SurfacePanel, WakePanel, TrefftzPanel, LiftingLineSegment
 export reflect, set_normal
 
 include("wake.jl")
@@ -35,6 +35,7 @@ include("circulation.jl")
 include("system.jl")
 export System
 export PanelProperties, get_surface_properties
+export LiftingLineProperties
 
 include("analyses.jl")
 export steady_analysis, steady_analysis!
@@ -45,8 +46,7 @@ include("nearfield.jl")
 export body_forces
 export body_viscous_forces
 export body_forces_history
-export lifting_line_coefficients, lifting_line_coefficients!, lifting_line_viscous_coefficients!
-export lifting_line_coefficients_history
+export lifting_line_coefficients, lifting_line_viscous_coefficients
 
 include("farfield.jl")
 export far_field_drag

@@ -606,3 +606,97 @@ Return induced drag from vortex `j` induced on panel `i`
 
     return Di
 end
+
+"""
+    LiftingLineSegment{TF}
+
+Lifting line segment associated with a Matrix of SurfacePanels.
+
+**Fields**
+ - `rl`: position of the left endpoint of the segment
+ - `rr`: position of the right endpoint of the segment
+ - `chord_l`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
+ - `chord_r`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
+"""
+struct LiftingLineSegment{TF}
+    rl::SVector{3, TF}
+    rr::SVector{3, TF}
+    chord_l::TF
+    chord_r::TF
+end
+
+@inline Base.eltype(::Type{LiftingLineSegment{TF}}) where TF = TF
+@inline Base.eltype(::LiftingLineSegment{TF}) where TF = TF
+
+"""
+    left(segment::LiftingLineSegment)
+
+Return the left vertex of `segment`
+"""
+@inline left(segment::LiftingLineSegment) = segment.rl
+
+"""
+    right(segment::LiftingLineSegment)
+
+Return the right vertex of `segment`
+"""
+@inline right(segment::LiftingLineSegment) = segment.rr
+
+"""
+    rotate(segment::LiftingLineSegment, R, r = [0,0,0])
+
+Return a copy of `segment` rotated about point `r` using the rotation matrix `R`
+"""
+@inline function rotate(segment::LiftingLineSegment, R, r = (@SVector zeros(3)))
+
+    rl = R*(segment.rl - r) + r
+    rr = R*(segment.rr - r) + r
+    chord_l = segment.chord_l
+    chord_r = segment.chord_r
+
+    return LiftingLineSegment(rl, rr, chord_l, chord_r)
+end
+
+"""
+    rotate(lifting_line, R, r = [0,0,0])
+
+Return a copy of the segments in `lifting_line` rotated about point `r` using the rotation matrix `R`
+"""
+rotate(lifting_line::AbstractVector{<:LiftingLineSegment}, R, r = (@SVector zeros(3))) = rotate.(lifting_line, Ref(R), Ref(r))
+
+"""
+    rotate!(lifting_line, R, r = [0,0,0])
+
+Rotate the line segments in `lifting_line` about point `r` using the rotation matrix `R`
+"""
+function rotate!(lifting_line::AbstractVector{<:LiftingLineSegment}, R, r = (@SVector zeros(3)))
+
+    for i in eachindex(lifting_line)
+        lifting_line[i] = rotate(lifting_line[i], R, r)
+    end
+
+    return lifting_line
+end
+
+"""
+    rotate(lifting_lines, R, r = [0,0,0])
+
+Return a copy of the lifting lines in `lifting_lines` rotated about point `r` using the
+rotation matrix `R`
+"""
+rotate(lifting_lines::AbstractVector{<:AbstractVector{<:LiftingLineSegment}}, R, r = (@SVector zeros(3))) =
+    rotate.(lifting_lines, Ref(R), Ref(r))
+
+"""
+    rotate!(lifting_lines, R, r = [0,0,0])
+
+Rotate the lifting lines in `lifting_lines` about point `r` using the rotation matrix `R`
+"""
+function rotate!(lifting_lines::AbstractVector{<:AbstractVector{<:LiftingLineSegment}}, R, r = (@SVector zeros(3)))
+
+    for i in eachindex(lifting_lines)
+        lifting_lines[i] = rotate!(lifting_lines[i], R, r)
+    end
+
+    return lifting_lines
+end
