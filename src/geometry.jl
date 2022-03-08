@@ -483,7 +483,7 @@ end
 
 """
     wing_to_surface_panels(xloc, yloc, zloc, chord, theta, phi, ns, nc;
-        xc = fill(0, length(xloc)),
+        xcloc = fill(0, length(xloc)),
         fc = fill(x -> 0, length(xloc)),
         mirror = false,
         fcore = (c, Δs) -> 1e-3,
@@ -521,7 +521,7 @@ with dimensions (i, j) containing the generated panels.
  - `interp_s`: interpolation function between spanwise stations, defaults to linear interpolation
 """
 function wing_to_surface_panels(xloc, yloc, zloc, chord, theta, phi, ns, nc;
-    xcloc = zero(xloc),
+    xcloc = fill(0, length(xloc)),
     fc = fill(x->0, length(xloc)),
     mirror = false,
     fcore = (c, Δs) -> 1e-3,

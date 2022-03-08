@@ -649,8 +649,8 @@ Return a copy of `segment` rotated about point `r` using the rotation matrix `R`
 """
 @inline function rotate(segment::LiftingLineSegment, R, r = (@SVector zeros(3)))
 
-    rl = R*(segment.rtl - r) + r
-    rr = R*(segment.rtr - r) + r
+    rl = R*(segment.rl - r) + r
+    rr = R*(segment.rr - r) + r
     chord_l = segment.chord_l
     chord_r = segment.chord_r
 

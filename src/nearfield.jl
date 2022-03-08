@@ -572,11 +572,11 @@ end
 
 function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, props, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
     # number of surfaces
-    nsurf = length(system.surfaces)
+    nsurf = length(lifting_line_properties)
 
     # iterate through each lifting surface
     for isurf = 1:nsurf
-        nc, ns = size(surfaces[isurf])
+        ns = length(lifting_line_properties[isurf])
         # loop through each chordwise set of panels
         for j = 1:ns
             llp = lifting_line_properties[isurf][j]
@@ -631,7 +631,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # moment arm is zero.
             cmvj = zero(cfvj)
 
-            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmv)
+            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmvj)
         end
     end
 end
@@ -824,7 +824,7 @@ function body_viscous_forces(lifting_line_properties, ref, fs, symmetric, frame)
             # add viscous loading for this spanwise station
             Δr = rs - ref.r
             # cf = @view cfv[isurf][:, j]
-            cf = cfv[isurf][j].cfv
+            cf = lifting_line_properties[isurf][j].cfv
             # adjust non-dimensionalization to match what body_forces uses
             cf *= ds*cs/ref.S  # LiftingLineProperties.cfv is a SVector{3,TF}, so this won't mutate lifting_line_properties
             CFi += cf
@@ -1139,13 +1139,13 @@ function lifting_line_coefficients(system; frame=Body())
     fs = system.freestream[]
 
     # number of surfaces
-    nsurf = length(system.surfaces)
+    nsurf = length(system.lifting_line_properties)
 
     TF = eltype(system)
     cf = Vector{Matrix{TF}}(undef, nsurf)
     cm = Vector{Matrix{TF}}(undef, nsurf)
     for isurf = 1:nsurf
-        ns = size(system.surfaces[isurf], 2)
+        ns = length(system.lifting_line_properties[isurf])
         cf[isurf] = Matrix{TF}(undef, 3, ns)
         cm[isurf] = Matrix{TF}(undef, 3, ns)
         for j = 1:ns
@@ -1194,13 +1194,13 @@ function lifting_line_viscous_coefficients(system; frame=Body())
     fs = system.freestream[]
 
     # number of surfaces
-    nsurf = length(system.surfaces)
+    nsurf = length(system.lifting_line_properties)
 
     TF = eltype(system)
     cf = Vector{Matrix{TF}}(undef, nsurf)
     cm = Vector{Matrix{TF}}(undef, nsurf)
     for isurf = 1:nsurf
-        ns = size(system.surfaces[isurf], 2)
+        ns = length(system.lifting_line_properties[isurf])
         cf[isurf] = Matrix{TF}(undef, 3, ns)
         cm[isurf] = Matrix{TF}(undef, 3, ns)
         for j = 1:ns

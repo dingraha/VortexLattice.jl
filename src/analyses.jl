@@ -547,7 +547,7 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
         lifting_line_analysis_it = lifting_line_analysis && near_field_analysis_it
         viscous_lifting_line_it = viscous_lifting_line && lifting_line_analysis_it
         if surface_motion
-            propagate_system!(system, surfaces[1+it], fs[it], dt[it];
+            propagate_system!(system, surfaces[1+it], lifting_lines[1+it], fs[it], dt[it];
                 additional_velocity,
                 repeated_points,
                 nwake = iwake,
@@ -635,10 +635,10 @@ propagate_system!
 
 # stationary surfaces
 propagate_system!(system, fs, dt; kwargs...) = propagate_system!(system,
-    nothing, fs, dt; kwargs...)
+    nothing, nothing, fs, dt; kwargs...)
 
 # moving/deforming surfaces
-function propagate_system!(system, surfaces, fs, dt;
+function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     additional_velocity,
     repeated_points,
     nwake,
