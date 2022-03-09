@@ -856,19 +856,13 @@ and chord lengths.
  - `lifting_lines`: Vector with length equal to the number of surfaces, with each element
     being a length `ns` vector of `LiftingLineSegment`s 
 """
-function lifting_line_geometry(grids, xc=0.25)
-    TF = eltype(eltype(grids))
+function lifting_line_geometry(grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25) where {TF}
     nsurf = length(grids)
-    # r = Vector{Matrix{TF}}(undef, nsurf)
-    # c = Vector{Vector{TF}}(undef, nsurf)
     lifting_lines = Vector{Vector{LiftingLineSegment{TF}}}(undef, nsurf)
     for isurf = 1:nsurf
         ns = size(grids[isurf], 3) - 1
-        # r[isurf] = Matrix{TF}(undef, 3, ns+1)
-        # c[isurf] = Vector{TF}(undef, ns+1)
         lifting_lines[isurf] = Vector{LiftingLineSegment{TF}}(undef, ns)
     end
-    # return lifting_line_geometry!(r, c, grids, xc)
     return lifting_line_geometry!(lifting_lines, grids, xc)
 end
 
@@ -877,51 +871,68 @@ end
 
 In-place version of [`lifting_line_geometry`](@ref)
 """
-function lifting_line_geometry!(lifting_lines, grids, xc=0.25)
+function lifting_line_geometry!(lifting_lines, grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25) where {TF}
     nsurf = length(grids)
-    # iterate through each lifting surface
     for isurf = 1:nsurf
-        # extract current grid
-        grid = grids[isurf]
-        # dimensions of this grid
-        nc = size(grid, 2)
-        # ns = size(grid, 3)
-        # loop through each spanwise section
-        # for j = 1:ns
-        #     # get leading and trailing edges
-        #     le = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
-        #     te = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
-        #     # get quarter-chord
-        #     # r[isurf][:,j] = linearinterp(xc, le, te)
-        #     r = SVector{3, TF}
-        #     # get chord length
-        #     c[isurf][j] = norm(le - te)
-        # end
-        ns = size(grid, 3) - 1
-        # loop through each spanwise section
-        for j = 1:ns
-            # start with the segment's left point
-            # get leading and and trailing edges
-            lel = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
-            tel = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
-            # get quarter-chord
-            rl = linearinterp(xc, lel, tel)
-            # get chord length
-            cl = norm(lel - tel)
-
-            # now work on the segment's right point
-            # get leading and and trailing edges
-            ler = SVector(grid[1,1,j+1], grid[2,1,j+1], grid[3,1,j+1])
-            ter = SVector(grid[1,end,j+1], grid[2,end,j+1], grid[3,end,j+1])
-            # get quarter-chord
-            rr = linearinterp(xc, ler, ter)
-            # get chord length
-            cr = norm(ler - ter)
-
-            lifting_lines[isurf][j] = LiftingLineSegment(rl, rr, cl, cr)
-        end
+        lifting_line_geometry!(lifting_lines[isurf], grids[isurf], xc)
     end
     return lifting_lines
+end
+
+"""
+    lifting_line_geometry(grid, xc=0.25)
+
+Construct a lifting line representation of `grid` at the
+normalized chordwise location `xc`.  Return the lifting line coordinates
+and chord lengths.
+
+# Arguments
+ - `grid`: Array with shape (3, nc, ns) which defines the discretization
+    of a surface into panels. `nc` is the number of chordwise panels and `ns` is
+    the number of spanwise panels.
+ - `xc`: Normalized chordwise location of the lifting line from the leading edge.
+    Defaults to the quarter chord
+# Return Arguments:
+ - `lifting_lines`: Vector of length `ns` of `LiftingLineSegment`s 
+"""
+function lifting_line_geometry(grid::AbstractArray{TF,3}, xc=0.25) where {TF}
+    ns = size(grid, 3) - 1
+    lifting_line = Vector{LiftingLineSegment{TF}}(undef, ns)
+    return lifting_line_geometry!(lifting_line, grid, xc)
+end
+
+"""
+    lifting_line_geometry!(lifting_line, grid, xc=0.25)
+
+In-place version of [`lifting_line_geometry`](@ref)
+"""
+function lifting_line_geometry!(lifting_line, grid::AbstractArray{TF,3}, xc=0.25) where {TF}
+    nc = size(grid, 2)
+    ns = size(grid, 3) - 1
+    # loop through each spanwise section
+    for j = 1:ns
+        # start with the segment's left point
+        # get leading and and trailing edges
+        lel = SVector(grid[1,1,j], grid[2,1,j], grid[3,1,j])
+        tel = SVector(grid[1,end,j], grid[2,end,j], grid[3,end,j])
+        # get quarter-chord
+        rl = linearinterp(xc, lel, tel)
+        # get chord length
+        cl = norm(lel - tel)
+
+        # now work on the segment's right point
+        # get leading and and trailing edges
+        ler = SVector(grid[1,1,j+1], grid[2,1,j+1], grid[3,1,j+1])
+        ter = SVector(grid[1,end,j+1], grid[2,end,j+1], grid[3,end,j+1])
+        # get quarter-chord
+        rr = linearinterp(xc, ler, ter)
+        # get chord length
+        cr = norm(ler - ter)
+
+        lifting_line[j] = LiftingLineSegment(rl, rr, cl, cr)
+    end
+
+    return lifting_line
 end
 
 """
