@@ -1106,6 +1106,54 @@ function body_forces_history(system, surface_history::AbstractVector{<:AbstractV
 end
 
 """
+    body_viscous_forces_history(system, lifting_line_property_history; frame=Body())
+
+Return the body viscous force coefficients `CFv`, `CMv` at each time step in `lifting_line_property_history`.
+
+# Arguments:
+ - `system`: Object of type [`System`](@ref) which holds system properties
+ - `lifting_line_property_history`: Vector of lifting line properties for each surface at each
+    time step, where lifting line properties are represented by a vector of lifting line
+    properties (see [`LiftingLineProperties`](@ref)) of shape `ns` where `ns` is
+    the number of spanwise panels
+
+# Keyword Arguments
+ - `frame`: frame in which to return `CF` and `CM`, options are [`Body()`](@ref) (default),
+   [`Stability()`](@ref), and [`Wind()`](@ref)`
+"""
+function body_viscous_forces_history(system, lifting_line_property_history::AbstractVector{<:AbstractVector{<:AbstractVector{<:LiftingLineProperties}}}; frame=Body())
+    @assert system.viscous_lifting_line[] "Viscous lifting line analysis required"
+
+    # unpack system parameters
+    symmetric = system.symmetric
+    ref = system.reference[]
+    fs = system.freestream[]
+
+    # float type
+    TF = eltype(system)
+
+    # number of time steps
+    nt = length(lifting_line_property_history)
+
+    # convert single freestream input to vector
+    if isa(fs, Freestream)
+        fs = fill(fs, nt)
+    end
+
+    # initialize time history coefficients
+    CFv = Vector{SVector{3, TF}}(undef, nt)
+    CMv = Vector{SVector{3, TF}}(undef, nt)
+
+    # populate time history coefficients
+    for it = 1:nt
+        CFv[it], CMv[it] = body_viscous_forces(lifting_line_properties[it],
+            ref, fs[it], symmetric, frame)
+    end
+
+    return CFv, CMv
+end
+
+"""
     lifting_line_coefficients(system; frame=Body())
 
 Return the force and moment coefficients (per unit span) for each spanwise segment
