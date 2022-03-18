@@ -1146,7 +1146,7 @@ function body_viscous_forces_history(system, lifting_line_property_history::Abst
 
     # populate time history coefficients
     for it = 1:nt
-        CFv[it], CMv[it] = body_viscous_forces(lifting_line_properties[it],
+        CFv[it], CMv[it] = body_viscous_forces(lifting_line_property_history[it],
             ref, fs[it], symmetric, frame)
     end
 
