@@ -115,7 +115,7 @@ Calculate local panel forces in the body frame.
 
                 dΓdti = I[1] == 1 ? dΓdt[iΓ+i] : (dΓdt[iΓ+i] + dΓdt[iΓ+i-1])/2
                 c = receiving[I].chord
-                Fbi += RHO*dΓdti*c*tmp
+                Fbi += RHO*dΓdti*c*tmp/norm(Vi)
 
             end
 
@@ -383,7 +383,7 @@ near_field_forces_derivatives!
 
                 dΓdti = I[1] == 1 ? dΓdt[iΓ+i] : (dΓdt[iΓ+i] + dΓdt[iΓ+i-1])/2
                 c = receiving[I].chord
-                Fbi += RHO*dΓdti*c*tmp
+                Fbi += RHO*dΓdti*c*tmp/norm(Vi)
 
             end
 
