@@ -56,6 +56,7 @@ Perform a steady vortex lattice method analysis.  Return an object of type
     should be used when calculating the forces acting on the lifting line. Defaults to `false`.
  - `drag_polar`: Function defining the drag coefficient as a function of lift
     coefficient for each spanwise section. Used by the viscous lifting line model.
+ - `clmax`: Maximum lift coefficient for each spanwise section. Used by the viscous lifting line model.
  - `derivatives`: Flag indicating whether the derivatives with respect
     to the freestream variables should be calculated. Defaults to `true`.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
@@ -239,7 +240,7 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
             # Do the lifting line stuff.
             lifting_line_forces!(lifting_line_properties, lifting_lines, properties, surfaces, ref)
             if viscous_lifting_line
-                lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, properties, surfaces, wakes,
+                lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, clmax, properties, surfaces, wakes,
                     ref, fs, Γ;
                     additional_velocity = additional_velocity,
                     Vh = nothing,
@@ -327,6 +328,7 @@ each surface at each time step, and a vector of lifting line properties (see
     should be used when calculating the forces acting on the lifting line. Defaults to `false`.
  - `drag_polar`: Function defining the drag coefficient as a function of lift
     coefficient for each spanwise section. Used by the viscous lifting line model.
+ - `clmax`: Maximum lift coefficient for each spanwise section. Used by the viscous lifting line model.
  - `derivatives`: Flag indicating whether the derivatives with respect to the
     freestream variables should be calculated for the final time step. Defaults
     to `true`.
@@ -426,6 +428,7 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     lifting_line_analysis = false,
     viscous_lifting_line = false,
     drag_polar = nothing,
+    clmax = Inf,
     derivatives = true)
 
     # This probably isn't the "right" way to throw an error.
@@ -556,6 +559,8 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 near_field_analysis = near_field_analysis_it,
                 lifting_line_analysis = lifting_line_analysis_it,
                 viscous_lifting_line = viscous_lifting_line_it,
+                drag_polar = drag_polar,
+                clmax = clmax,
                 derivatives = last_step && derivatives)
         else
             propagate_system!(system, fs[it], dt[it];
@@ -567,6 +572,8 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 near_field_analysis = near_field_analysis_it,
                 lifting_line_analysis = lifting_line_analysis_it,
                 viscous_lifting_line = viscous_lifting_line_it,
+                drag_polar = drag_polar,
+                clmax = clmax,
                 derivatives = last_step && derivatives)
         end
 
@@ -648,6 +655,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     lifting_line_analysis,
     viscous_lifting_line = false,
     drag_polar = nothing,
+    clmax = Inf,
     derivatives)
 
     # This probably isn't the "right" way to throw an error.
@@ -811,7 +819,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
             lifting_line_forces!(lifting_line_properties, current_lifting_lines, properties, current_surfaces, ref)
             if viscous_lifting_line
                 lifting_line_viscous_forces!(lifting_line_properties,
-                    current_lifting_lines, drag_polar, properties,
+                    current_lifting_lines, drag_polar, clmax, properties,
                     current_surfaces, wakes, ref, fs, Γ; additional_velocity,
                     Vh, symmetric, nwake, surface_id, wake_finite_core,
                     wake_shedding_locations, trailing_vorticies, xhat)

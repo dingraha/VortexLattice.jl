@@ -570,7 +570,7 @@ function lifting_line_forces!(lifting_line_properties, lifting_lines, props, sur
     return lifting_line_properties
 end
 
-function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, props, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
+function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, clmax, props, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
     # number of surfaces
     nsurf = length(lifting_line_properties)
 
@@ -623,8 +623,21 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # Update the dimensionalization to match cfj.
             cdj *= Vairfoil^2/ref.V^2
 
-            # The force needs to be in the drag direction.
-            cfvj = cdj*drag_dir
+            # Limit the lift coefficient in such a way that when added to the inviscid value, it will be at most clmax (or at least -clmax).
+            if clj > clmax
+                clj_limited = (clmax - clj)
+            elseif clj < -clmax
+                clj_limited = (-clmax - clj)
+            else
+                clj_limited = zero(clj)
+            end
+
+            # Update the dimensionalization to match cfj.
+            clj_limited *= Vairfoil^2/ref.V^2
+
+            # Get the total viscous force.
+            cfvj = cdj*drag_dir + clj_limited*lift_dir
+
             # What do I do about the moment coefficient?
             # Nothing, since I'm assuming that the viscous load passes
             # through the center of the lifting line element, and so the
