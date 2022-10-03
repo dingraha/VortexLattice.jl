@@ -49,6 +49,17 @@ Lifting line geometry and loading properties post-processed from the vortex latt
  - `cfv`: Viscous force coefficient, normalized by `1/2*RHO*ds*c`
  - `cm`: Inviscid moment coefficient, normalized by `1/2*RHO*ds*c^2`
  - `cmv`: Viscous moment coefficient, normalized by `1/2*RHO*ds*c^2`
+ - `u_chord`: unit vector pointing from trailing edge to leading edge
+ - `V`: Total velocity, normalized by the reference velocity
+ - `V_fs`: Freestream velocity, normalized by the reference velocity
+ - `V_rot`: Velocity due to rotation, normalized by the reference velocity
+ - `V_add`: Additional velocity, normalized by the reference velocity
+ - `V_sm`: Velocity due to surface motion, normalized by the reference velocity
+ - `alpha`: Local angle of attack
+ - `phi`: Local inflow angle
+ - `V_airfoil`: Local flow speed normal to span
+ - `cl`: Local lift coefficient
+ - `cd`: Local drag coefficient
 """
 struct LiftingLineProperties{TF}
   r::SVector{3, TF}
@@ -58,15 +69,29 @@ struct LiftingLineProperties{TF}
   cfv::SVector{3, TF}
   cm::SVector{3, TF}
   cmv::SVector{3, TF}
+  u_chord::SVector{3, TF}
+  V::SVector{3, TF}
+  V_fs::SVector{3, TF}
+  V_rot::SVector{3, TF}
+  V_add::SVector{3, TF}
+  V_sm::SVector{3, TF}
+  alpha::TF
+  alpha_from_twist::TF
+  phi::TF
+  V_airfoil::TF
+  cl::TF
+  cd::TF
 end
 
 # constructor
-function LiftingLineProperties(r, c, ds, cf, cfv, cm, cmv)
+function LiftingLineProperties(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd)
 
-    TF = promote_type(typeof(r), typeof(c), eltype(ds), eltype(cf),
-        eltype(cfv), typeof(cm), typeof(cmv))
+    TF = promote_type(eltype(r), typeof(c), typeof(ds), eltype(cf),
+                      eltype(cfv), eltype(cm), eltype(cmv), eltype(u_chord), eltype(V),
+                      eltype(V_fs), eltype(V_rot), eltype(V_add), eltype(V_sm),
+                      typeof(alpha), typeof(alpha_from_twist), typeof(phi), typeof(V_airfoil), typeof(cl), typeof(cd))
 
-    return LiftingLineProperties{TF}(r, c, ds, cf, cfv, cm, cmv)
+    return LiftingLineProperties{TF}(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd)
 end
 
 Base.eltype(::Type{LiftingLineProperties{TF}}) where TF = TF

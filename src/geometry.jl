@@ -839,7 +839,7 @@ function update_surface_panels!(surface, grid; fcore = (c, Δs) -> 1e-3)
 end
 
 """
-    lifting_line_geometry(grids, xc=0.25)
+    lifting_line_geometry(grids, xc=0.25, rot_origin=SVector{3,eltype(eltype(grids))}(0, 0, 0), rot_vector=SVector{3,eltype(eltype(grids))}(1, 0, 0))
 
 Construct a lifting line representation of the surfaces in `grids` at the
 normalized chordwise location `xc`.  Return the lifting line coordinates
@@ -852,35 +852,38 @@ and chord lengths.
     the number of spanwise panels.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
     Defaults to the quarter chord
+ - `rot_origin`: position of the origin of rotation of the (moving) grid.
+ - `rot_axis`: unit vector defining the rotation axis of the (moving) grid.
+    (Used for the Du-Selig Eggers rotational stall correction.)
 # Return Arguments:
  - `lifting_lines`: Vector with length equal to the number of surfaces, with each element
     being a length `ns` vector of `LiftingLineSegment`s 
 """
-function lifting_line_geometry(grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25) where {TF}
+function lifting_line_geometry(grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25, rot_origin=SVector{3,TF}(zero(TF), zero(TF), zero(TF)), rot_axis=SVector{3,TF}(one(TF), zero(TF), zero(TF))) where {TF}
     nsurf = length(grids)
     lifting_lines = Vector{Vector{LiftingLineSegment{TF}}}(undef, nsurf)
     for isurf = 1:nsurf
         ns = size(grids[isurf], 3) - 1
         lifting_lines[isurf] = Vector{LiftingLineSegment{TF}}(undef, ns)
     end
-    return lifting_line_geometry!(lifting_lines, grids, xc)
+    return lifting_line_geometry!(lifting_lines, grids, xc, rot_origin, rot_axis)
 end
 
 """
-    lifting_line_geometry!(lifting_lines, grids, xc=0.25)
+    lifting_line_geometry!(lifting_lines, grids, xc=0.25, rot_origin=[0, 0, 0], rot_axis=[1, 0, 0])
 
 In-place version of [`lifting_line_geometry`](@ref)
 """
-function lifting_line_geometry!(lifting_lines, grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25) where {TF}
+function lifting_line_geometry!(lifting_lines, grids::AbstractVector{<:AbstractArray{TF,3}}, xc=0.25, rot_origin=SVector{3,TF}(zero(TF), zero(TF), zero(TF)), rot_axis=SVector{3,TF}(one(TF), zero(TF), zero(TF))) where {TF}
     nsurf = length(grids)
     for isurf = 1:nsurf
-        lifting_line_geometry!(lifting_lines[isurf], grids[isurf], xc)
+        lifting_line_geometry!(lifting_lines[isurf], grids[isurf], xc, rot_origin, rot_axis)
     end
     return lifting_lines
 end
 
 """
-    lifting_line_geometry(grid, xc=0.25)
+    lifting_line_geometry(grid, xc=0.25, rot_vector=SVector{3, eltype(grid)}(1, 0, 0))
 
 Construct a lifting line representation of `grid` at the
 normalized chordwise location `xc`.  Return the lifting line coordinates
@@ -892,21 +895,24 @@ and chord lengths.
     the number of spanwise panels.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
     Defaults to the quarter chord
+ - `rot_origin`: position of the origin of rotation of the (moving) grid.
+ - `rot_axis`: unit vector defining the rotation axis of the (moving) grid.
+    (Used for the Du-Selig Eggers rotational stall correction.)
 # Return Arguments:
  - `lifting_lines`: Vector of length `ns` of `LiftingLineSegment`s 
 """
-function lifting_line_geometry(grid::AbstractArray{TF,3}, xc=0.25) where {TF}
+function lifting_line_geometry(grid::AbstractArray{TF,3}, xc=0.25, rot_origin=SVector{3,TF}(zero(TF), zero(TF), zero(TF)), rot_axis=SVector{3,TF}(one(TF), zero(TF), zero(TF))) where {TF}
     ns = size(grid, 3) - 1
     lifting_line = Vector{LiftingLineSegment{TF}}(undef, ns)
-    return lifting_line_geometry!(lifting_line, grid, xc)
+    return lifting_line_geometry!(lifting_line, grid, xc, rot_origin, rot_axis)
 end
 
 """
-    lifting_line_geometry!(lifting_line, grid, xc=0.25)
+    lifting_line_geometry!(lifting_line, grid, xc=0.25, rot_origin=SVector{3, eltype(grid)}(0, 0, 0), rot_vector=SVector{3, eltype(grid)}(1, 0, 0))
 
 In-place version of [`lifting_line_geometry`](@ref)
 """
-function lifting_line_geometry!(lifting_line, grid::AbstractArray{TF,3}, xc=0.25) where {TF}
+function lifting_line_geometry!(lifting_line, grid::AbstractArray{TF,3}, xc=0.25, rot_origin=SVector{3,TF}(zero(TF), zero(TF), zero(TF)), rot_axis=SVector{3,TF}(one(TF), zero(TF), zero(TF))) where {TF}
     nc = size(grid, 2)
     ns = size(grid, 3) - 1
     # loop through each spanwise section
@@ -920,6 +926,9 @@ function lifting_line_geometry!(lifting_line, grid::AbstractArray{TF,3}, xc=0.25
         # get chord length
         cl = norm(lel - tel)
 
+        # Get unit vector in the chord direction from trailing edge to leading edge.
+        u_chord_l = (lel - tel)/cl
+
         # now work on the segment's right point
         # get leading and and trailing edges
         ler = SVector(grid[1,1,j+1], grid[2,1,j+1], grid[3,1,j+1])
@@ -929,7 +938,10 @@ function lifting_line_geometry!(lifting_line, grid::AbstractArray{TF,3}, xc=0.25
         # get chord length
         cr = norm(ler - ter)
 
-        lifting_line[j] = LiftingLineSegment(rl, rr, cl, cr)
+        # Get unit vector in the chord direction from trailing edge to leading edge.
+        u_chord_r = (ler - ter)/cr
+
+        lifting_line[j] = LiftingLineSegment(rl, rr, cl, cr, u_chord_l, u_chord_r, rot_origin, rot_axis)
     end
 
     return lifting_line

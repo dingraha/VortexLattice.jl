@@ -63,6 +63,7 @@ Perform a steady vortex lattice method analysis.  Return an object of type
     to the freestream variables should be calculated. Defaults to `true`.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
     Defaults to `0.25`, indicating the lifting line will be constructed along the quarter chord
+ - `re_correction`: function of the form `cd_corrected = re_correction(cd, Re)`, where `cd` is a local drag coefficient and `Re` a local Reynolds number based on chord.
 """
 steady_analysis
 
@@ -115,7 +116,8 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
     viscous_lifting_line = false,
     drag_polar = nothing,
     prandtl_glauert = false,
-    derivatives = true)
+    derivatives = true,
+    re_correction = (cd, Re) -> cd)
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -256,7 +258,9 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
                     wake_finite_core = wake_finite_core,
                     wake_shedding_locations = wake_shedding_locations,
                     trailing_vorticies = trailing_vorticies,
-                    xhat = xhat)
+                    xhat = xhat,
+                    re_correction = re_correction,
+                    rotation_correction = nothing)
             end
         end
     end
@@ -345,6 +349,8 @@ each surface at each time step, and a vector of lifting line properties (see
     Defaults to `true`.
  - `xc`: Normalized chordwise location of the lifting line from the leading edge.
     Defaults to `0.25`, indicating the lifting line will be constructed along the quarter chord
+ - `re_correction`: function of the form `cd_corrected = re_correction(cd, Re)`, where `cd` is a local drag coefficient and `Re` a local Reynolds number based on chord.
+ - `rotation_correction`: `CCBlade.RotationCorrection` object, or `nothing`.
 """
 unsteady_analysis
 
@@ -442,7 +448,9 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     clmax = Inf,
     derivatives = true,
     prandtl_glauert = false,
-    unsteady_kj=true)
+    unsteady_kj=true,
+    re_correction = (cd, Re) -> cd,
+    rotation_correction = nothing)
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -577,7 +585,9 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 prandtl_glauert = prandtl_glauert,
                 unsteady_kj = unsteady_kj,
                 drag_polar = drag_polar,
-                clmax = clmax)
+                clmax = clmax,
+                re_correction = re_correction,
+                rotation_correction = rotation_correction)
         else
             propagate_system!(system, fs[it], dt[it];
                 additional_velocity,
@@ -592,7 +602,9 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 prandtl_glauert = prandtl_glauert,
                 unsteady_kj = unsteady_kj,
                 drag_polar = drag_polar,
-                clmax = clmax)
+                clmax = clmax,
+                re_correction = re_correction,
+                rotation_correction = rotation_correction)
         end
 
         # increment wake panel counter for each surface
@@ -659,6 +671,8 @@ unsteady vortex lattice method system of equations.
     compressibility correction should be used.
  - `unsteady_kj': Flag indicating whether the unsteady part of 
     the Kutta-Joukowski theorem should be used for the nearfield loading calculation.
+ - `re_correction`: function of the form `cd_corrected = re_correction(cd, Re)`, where `cd` is a local drag coefficient and `Re` a local Reynolds number based on chord.
+ - `rotation_correction`: `CCBlade.RotationCorrection` object, or `nothing`.
 """
 propagate_system!
 
@@ -680,7 +694,9 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     clmax = Inf,
     derivatives,
     prandtl_glauert,
-    unsteady_kj)
+    unsteady_kj,
+    re_correction = (cd, Re) -> cd,
+    rotation_correction = nothing)
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -853,7 +869,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
                     current_lifting_lines, drag_polar, clmax, properties,
                     current_surfaces, wakes, ref, fs, Γ; additional_velocity,
                     Vh, symmetric, nwake, surface_id, wake_finite_core,
-                    wake_shedding_locations, trailing_vortices, xhat)
+                    wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction)
             end
         end
 

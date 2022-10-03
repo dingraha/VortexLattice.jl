@@ -8,7 +8,8 @@ Defines the freestream and rotational velocity properties.
 - `alpha`: angle of attack (rad)
 - `beta`: sideslip angle (rad)
 - `Omega`: rotation vector (p, q, r) of the body frame about the reference center
-- `speedofsound`: Freestream speed of sound
+- `speedofsound`: Freestream speed of sound (used for Prandtl-Glauret compressibility correction)
+- `viscocity`: Freestream kinematic viscocity (used for Reynolds number correction)
 """
 struct Freestream{TF}
     Vinf::TF
@@ -16,16 +17,17 @@ struct Freestream{TF}
     beta::TF
     Omega::SVector{3, TF}
     speedofsound::TF
+    viscocity::TF
 end
 
-function Freestream(Vinf, alpha, beta, Omega, speedofsound)
-    TF = promote_type(typeof(Vinf), typeof(alpha), typeof(beta), eltype(Omega), typeof(speedofsound))
-    return Freestream{TF}(Vinf, alpha, beta, Omega, speedofsound)
+function Freestream(Vinf, alpha, beta, Omega, speedofsound, viscocity)
+    TF = promote_type(typeof(Vinf), typeof(alpha), typeof(beta), eltype(Omega), typeof(speedofsound), typeof(viscocity))
+    return Freestream{TF}(Vinf, alpha, beta, Omega, speedofsound, viscocity)
 end
 
-# Arbitrarily assume a Mach=0.05 freestream velocity if speed of sound isn't
-# given.
-Freestream(Vinf, alpha, beta, Omega) = Freestream(Vinf, alpha, beta, Omega, Vinf/0.05)
+# Arbitrarily assume a Mach=0.05 freestream velocity if speed of sound isn't given.
+# viscocity = 1.45e-5 m^2/s seems reasonable for air at standard conditions.
+Freestream(Vinf, alpha, beta, Omega) = Freestream(Vinf, alpha, beta, Omega, Vinf/0.05, 1.45e-5)
 
 Base.eltype(::Type{Freestream{TF}}) where TF = TF
 Base.eltype(::Freestream{TF}) where TF = TF

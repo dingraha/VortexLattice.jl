@@ -617,12 +617,21 @@ Lifting line segment associated with a Matrix of SurfacePanels.
  - `rr`: position of the right endpoint of the segment
  - `chord_l`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
  - `chord_r`: segment chord length at the left endpoint of the segment (for scaling lifting line loading coefficients)
+ - `u_chord_l`: unit vector in the chord line direction, from trailing edge to leading edge, for the left endpoint of the segment
+ - `u_chord_r`: unit vector in the chord line direction, from trailing edge to leading edge, for the right endpoint of the segment
+ - `rot_origin`: position of the origin of rotation of the (moving) grid.
+ - `rot_axis`: unit vector defining the rotation axis of the (moving) grid.
+    (Used for the Du-Selig Eggers rotational stall correction.)
 """
 struct LiftingLineSegment{TF}
     rl::SVector{3, TF}
     rr::SVector{3, TF}
     chord_l::TF
     chord_r::TF
+    u_chord_l::SVector{3, TF}
+    u_chord_r::SVector{3, TF}
+    rot_origin::SVector{3, TF}
+    rot_axis::SVector{3, TF}
 end
 
 @inline Base.eltype(::Type{LiftingLineSegment{TF}}) where TF = TF
@@ -654,7 +663,11 @@ Return a copy of `segment` rotated about point `r` using the rotation matrix `R`
     chord_l = segment.chord_l
     chord_r = segment.chord_r
 
-    return LiftingLineSegment(rl, rr, chord_l, chord_r)
+    u_chord_l = R*segment.u_chord_l
+    u_chord_r = R*segment.u_chord_r
+    rot_origin = R*(segment.rot_origin - r) + r
+    rot_axis = R*segment.rot_axis
+    return LiftingLineSegment(rl, rr, chord_l, chord_r, u_chord_l, u_chord_r, rot_origin, rot_axis)
 end
 
 """
