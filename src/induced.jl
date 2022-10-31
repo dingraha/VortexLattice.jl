@@ -221,7 +221,7 @@ on the top, bottom, left, and right sides of `panel`.
     r12 = top_right(panel)
     r21 = bottom_left(panel)
     r22 = bottom_right(panel)
-    core_size = get_core_size(panel)
+    core_size = get_current_core_size(panel)
 
     return ring_induced_velocity(rcp, r11, r12, r21, r22; core_size=core_size, kwargs...)
 end
@@ -455,7 +455,7 @@ Compute the AIC coefficients corresponding to the influence of the panels in
                     r12 = bottom_right(panel)
                     r21 = wake_shedding_locations[j2]
                     r22 = wake_shedding_locations[j2+1]
-                    core_size = get_core_size(panel)
+                    core_size = get_current_core_size(panel)
 
                     Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                         r11, r12, r21, r22;
@@ -522,7 +522,7 @@ Compute the AIC coefficients corresponding to the influence of the panels in
                 r12 = bottom_right(panel)
                 r21 = wake_shedding_locations[j2]
                 r22 = wake_shedding_locations[j2+1]
-                core_size = get_core_size(panel)
+                core_size = get_current_core_size(panel)
 
                 Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                     r11, r12, r21, r22;
@@ -590,7 +590,7 @@ Compute the AIC coefficients corresponding to the influence of the panels in
                     r12 = bottom_right(panel)
                     r21 = wake_shedding_locations[j2]
                     r22 = wake_shedding_locations[j2+1]
-                    core_size = get_core_size(panel)
+                    core_size = get_current_core_size(panel)
 
                     Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                         r11, r12, r21, r22;
@@ -787,7 +787,7 @@ panels in `sending` on the panels in `receiving`.
                     r12 = bottom_right(panel)
                     r21 = wake_shedding_locations[j2]
                     r22 = wake_shedding_locations[j2+1]
-                    core_size = get_core_size(panel)
+                    core_size = get_current_core_size(panel)
 
                     Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                         r11, r12, r21, r22;
@@ -849,7 +849,7 @@ panels in `sending` on the panels in `receiving`.
                 r12 = bottom_right(panel)
                 r21 = wake_shedding_locations[j2]
                 r22 = wake_shedding_locations[j2+1]
-                core_size = get_core_size(panel)
+                core_size = get_current_core_size(panel)
 
                 Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                     r11, r12, r21, r22;
@@ -905,7 +905,7 @@ panels in `sending` on the panels in `receiving`.
                     r12 = bottom_right(panel)
                     r21 = wake_shedding_locations[j2]
                     r22 = wake_shedding_locations[j2+1]
-                    core_size = get_core_size(panel)
+                    core_size = get_current_core_size(panel)
 
                     Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                         r11, r12, r21, r22;
@@ -1544,7 +1544,7 @@ the circulation strengths provided in Γ.
                 r12 = bottom_right(panel)
                 r21 = wake_shedding_locations[j2]
                 r22 = wake_shedding_locations[j2+1]
-                core_size = get_core_size(panel)
+                core_size = get_current_core_size(panel)
 
                 Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                     r11, r12, r21, r22,
@@ -1804,7 +1804,7 @@ the circulation strengths provided in Γ.
             r12 = bottom_right(panel)
             r21 = wake_shedding_locations[j2]
             r22 = wake_shedding_locations[j2+1]
-            core_size = get_core_size(panel)
+            core_size = get_current_core_size(panel)
 
             Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                 r11, r12, r21, r22,
@@ -2096,7 +2096,7 @@ the circulation strengths provided in Γ.
                 r12 = bottom_right(panel)
                 r21 = wake_shedding_locations[j2]
                 r22 = wake_shedding_locations[j2+1]
-                core_size = get_core_size(panel)
+                core_size = get_current_core_size(panel)
 
                 Vhat, Vhat_t, Vhat_b, Vhat_l, Vhat_r = ring_induced_velocity(rcp,
                     r11, r12, r21, r22,

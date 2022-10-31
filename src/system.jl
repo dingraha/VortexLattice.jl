@@ -60,6 +60,8 @@ Lifting line geometry and loading properties post-processed from the vortex latt
  - `V_airfoil`: Local flow speed normal to span
  - `cl`: Local lift coefficient
  - `cd`: Local drag coefficient
+ - `cd_alpha`: Local drag coefficient, from alpha
+ - `cfv_alpha`: Viscous force coefficient, normalized by `1/2*RHO*ds*c`, calculated from local angle of attack
 """
 struct LiftingLineProperties{TF}
   r::SVector{3, TF}
@@ -81,17 +83,19 @@ struct LiftingLineProperties{TF}
   V_airfoil::TF
   cl::TF
   cd::TF
+  cd_alpha::TF
+  cfv_alpha::SVector{3, TF}
 end
 
 # constructor
-function LiftingLineProperties(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd)
+function LiftingLineProperties(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd, cd_alpha, cfv_alpha)
 
     TF = promote_type(eltype(r), typeof(c), typeof(ds), eltype(cf),
                       eltype(cfv), eltype(cm), eltype(cmv), eltype(u_chord), eltype(V),
                       eltype(V_fs), eltype(V_rot), eltype(V_add), eltype(V_sm),
-                      typeof(alpha), typeof(alpha_from_twist), typeof(phi), typeof(V_airfoil), typeof(cl), typeof(cd))
+                      typeof(alpha), typeof(alpha_from_twist), typeof(phi), typeof(V_airfoil), typeof(cl), typeof(cd), typeof(cd_alpha), eltype(cfv_alpha))
 
-    return LiftingLineProperties{TF}(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd)
+    return LiftingLineProperties{TF}(r, c, ds, cf, cfv, cm, cmv, u_chord, V, V_fs, V_rot, V_add, V_sm, alpha, alpha_from_twist, phi, V_airfoil, cl, cd, cd_alpha, cfv_alpha)
 end
 
 Base.eltype(::Type{LiftingLineProperties{TF}}) where TF = TF

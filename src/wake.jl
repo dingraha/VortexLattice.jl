@@ -77,14 +77,23 @@ to account for the new wake shedding location
                 rbl = bottom_left(wakes[isurf][1,j])
                 rbr = bottom_right(wakes[isurf][1,j])
 
-                # preserve core size
-                core_size = get_core_size(wakes[isurf][1,j])
+                # preserve initial core size
+                core_size1 = get_initial_core_size(wakes[isurf][1,j])
 
                 # preserve circulation strength
                 gamma = circulation_strength(wakes[isurf][1,j])
 
+                # Preserve age
+                age = get_age(wakes[isurf][1,j])
+
+                # Preserve everything else about the old panel
+                nu = wakes[isurf][1,j].nu
+                oseen = wakes[isurf][1,j].oseen
+                a1 = wakes[isurf][1,j].a1
+                bq_s = wakes[isurf][1,j].bq_s
+
                 # replace the old wake panel
-                wakes[isurf][1,j] = WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+                wakes[isurf][1,j] = WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
             end
         end
 
@@ -334,13 +343,17 @@ Return a translated copy of the wake panel `panel` given the wake corner velocit
     lr = norm(rbr - rtr)
     l2 = lt + lb + ll + lr
 
-    # use previous core size
-    core_size = get_core_size(panel)
+    # get initial core size, which doesn't change with time
+    core_size1 = get_initial_core_size(panel)
 
-    # correct vorticity for vortex stretching
-    gamma = circulation_strength(panel)*l1/l2
+    # get the new wake age
+    age = get_age(panel) + dt
 
-    return WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+    # correct vorticity for vortex stretching and exponential decay
+    bq_s = panel.bq_s
+    gamma = circulation_strength(panel)*l1/l2*decay_factor(bq_s, age)
+
+    return WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, panel.nu, panel.oseen, panel.a1, bq_s)
 end
 
 """
@@ -380,7 +393,7 @@ and the time step `dt`.
 end
 
 """
-    shed_wake!(wake, wake_shedding_locations, wake_velocities, dt, surface, Γ, nwake)
+    shed_wake!(wake, wake_shedding_locations, wake_velocities, dt, surface, Γ, nwake, nu, oseen, a1, bq_s)
 
 Shed a new wake panel from the wake shedding locations and translate existing
 wake panels.
@@ -400,9 +413,13 @@ wake panels.
  - `Γ`: Circulation strength of each surface panel in `surface`
  - `nwake`: Number of chordwise wake panels to use from `wake`, defaults to all
     provided wake panels
+ - `nu`: Kinematic viscosity
+ - `oseen`: Oseen coefficient. Set to zero to disable the finite core length growth model.
+ - `a1`: Non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: Circulation exponential decay factor. Set to zero for no decay.
 """
 @inline function shed_wake!(wake::AbstractMatrix, wake_shedding_locations,
-    wake_velocities, dt, surface, Γ, nwake)
+    wake_velocities, dt, surface, Γ, nwake, nu, oseen, a1, bq_s)
 
     nc, ns = size(surface)
     nw = size(wake, 1)
@@ -420,13 +437,16 @@ wake panels.
         rbr = rtr + wake_velocities[1, j+1]*dt
 
         # use core size from the shedding panel
-        core_size = get_core_size(surface[end, j])
+        core_size = get_current_core_size(surface[end, j])
 
         # use circulation strength from the shedding panel
         gamma = Γ[ls[end,j]]
 
+        # We are shedding this wake panel right now, so its age is zero
+        age = zero(eltype(eltype(wake)))
+
         # replace the oldest wake panel
-        wake[end,j] = WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+        wake[end,j] = WakePanel(rtl, rtr, rbl, rbr, core_size, gamma, age, nu, oseen, a1, bq_s)
     end
 
     # translate all existing wake panels except the most recently shed panels
@@ -459,9 +479,13 @@ wake panels.
  - `Γ`: Circulation strength of each surface panel in `surfaces`
  - `nwake`: Number of chordwise wake panels to use from each wake in `wakes`,
     defaults to all provided wake panels
+ - `nu`: Kinematic viscosity
+ - `oseen`: `length(wake)`-Vector of oseen coefficients. Set to zero to disable the finite core length growth model.
+ - `a1`: `length(wake)`-Vector of non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: `length(wake)`-Vector of circulation exponential decay factor. Set to zero for no decay.
 """
 @inline function shed_wake!(wakes::AbstractVector{<:AbstractMatrix}, wake_shedding_locations,
-    wake_velocities, dt, surfaces, Γ, nwake)
+    wake_velocities, dt, surfaces, Γ, nwake, nu, oseen, a1, bq_s)
 
     iΓ = 0
     for i = 1:length(surfaces)
@@ -471,7 +495,7 @@ wake panels.
         vΓ = view(Γ, iΓ+1:iΓ+N)
 
         shed_wake!(wakes[i], wake_shedding_locations[i], wake_velocities[i], dt,
-            surfaces[i], vΓ, nwake[i])
+           surfaces[i], vΓ, nwake[i], nu, oseen[i], a1[i], bq_s[i])
 
         iΓ += N
     end

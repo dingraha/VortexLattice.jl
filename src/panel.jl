@@ -132,6 +132,14 @@ associated with `panel`
 @inline get_core_size(panel::SurfacePanel) = panel.core_size
 
 """
+    get_current_core_size(panel::SurfacePanel)
+
+Return the current core size (smoothing parameter) corresponding to the vortex ring
+associated with `panel`
+"""
+@inline get_current_core_size(panel::SurfacePanel) = get_core_size(panel)
+
+"""
     translate(panel::SurfacePanel, r)
 
 Return a copy of `panel` translated the distance specified by vector `r`
@@ -348,20 +356,31 @@ SurfacePanel used for modeling wakes.
  - `rtr`: position of the right side of the top bound vortex
  - `rbl`: position of the left side of the bottom bound vortex
  - `rbr`: position of the right side of the bottom bound vortex
- - `core_size`: finite core size (for use when the finite core smoothing model is enabled)
+ - `core_size1`: initial finite core size (for use when the finite core smoothing model is enabled)
  - `gamma`: circulation strength of the panel
+ - `age`: Time since the wake panel was shed (the "wake age")
+ - `nu`: Kinematic viscosity
+ - `oseen`: Oseen coefficient. Set to zero to disable the finite core length growth model.
+ - `a1`: Non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: Circulation exponential decay factor
 """
 struct WakePanel{TF}
     rtl::SVector{3, TF}
     rtr::SVector{3, TF}
     rbl::SVector{3, TF}
     rbr::SVector{3, TF}
-    core_size::TF
+    core_size1::TF
     gamma::TF
+    age::TF
+    nu::TF
+    oseen::TF
+    a1::TF
+    bq_s::TF
 end
 
+
 """
-    WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+    WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 
 Construct and return a wake panel.
 
@@ -370,16 +389,21 @@ Construct and return a wake panel.
  - `rtr`: position of the right side of the top bound vortex
  - `rbl`: position of the left side of the bottom bound vortex
  - `rbr`: position of the right side of the bottom bound vortex
- - `core_size`: finite core size
+ - `core_size1`: initial finite core size
  - `gamma`: circulation strength of the panel
+ - `age`: Time since the wake panel was shed (the "wake age")
+ - `nu`: Kinematic viscosity
+ - `oseen`: Oseen coefficient. Set to zero to disable the finite core length growth model.
+ - `a1`: Non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: Circulation exponential decay factor
 """
 WakePanel(args...; kwargs...)
 
-function WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+function WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 
-    TF = promote_type(eltype(rtl), eltype(rtr), eltype(rbl), eltype(rbr), typeof(core_size), typeof(gamma))
+    TF = promote_type(eltype(rtl), eltype(rtr), eltype(rbl), eltype(rbr), typeof(core_size1), typeof(gamma), typeof(age), typeof(nu), typeof(oseen), typeof(a1), typeof(bq_s))
 
-    return WakePanel{TF}(rtl, rtr, rbl, rbr, core_size, gamma)
+    return WakePanel{TF}(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 end
 
 @inline Base.eltype(::Type{WakePanel{TF}}) where TF = TF
@@ -393,7 +417,20 @@ end
 
 @inline bottom_right(panel::WakePanel) = panel.rbr
 
-@inline get_core_size(panel::WakePanel) = panel.core_size
+@inline get_initial_core_size(panel::WakePanel) = panel.core_size1
+
+@inline function get_current_core_size(panel::WakePanel)
+    core_size1 = get_initial_core_size(panel)
+    gamma = abs(circulation_strength(panel))
+    oseen = panel.oseen
+    age = get_age(panel)
+    nu = panel.nu
+    delta = 1 + panel.a1*gamma/nu
+
+    return sqrt(core_size1^2 + 4*oseen*delta*nu*age)
+end
+
+@inline get_age(panel::WakePanel) = panel.age
 
 """
     circulation_strength(panel::WakePanel)
@@ -401,6 +438,14 @@ end
 Return the circulation strength of the wake panel.
 """
 @inline circulation_strength(panel::WakePanel) = panel.gamma
+
+
+"""
+    decay_factor(panel::WakePanel)
+
+Return the ratio of the 
+"""
+@inline decay_factor(bq_s, age) = exp(-bq_s*age)
 
 """
     set_circulation_strength(panel::WakePanel, gamma)
@@ -413,9 +458,14 @@ Return a copy of `panel` with the circulation strength `gamma`
     rtr = panel.rtr
     rbl = panel.rbl
     rbr = panel.rbr
-    core_size = panel.core_size
+    core_size1 = panel.core_size1
+    age = panel.age
+    nu = panel.nu
+    oseen = panel.oseen
+    a1 = panel.a1
+    bq_s = panel.bq_s
 
-    return WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+    return WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 end
 
 @inline function translate(panel::WakePanel, r)
@@ -424,10 +474,15 @@ end
     rtr = panel.rtr + r
     rbl = panel.rbl + r
     rbr = panel.rbr + r
-    core_size = panel.core_size
+    core_size1 = panel.core_size1
     gamma = panel.gamma
+    age = panel.age
+    nu = panel.nu
+    oseen = panel.oseen
+    a1 = panel.a1
+    bq_s = panel.bq_s
 
-    return WakePanel(rtl, rtr, rbl, rbr, core_size, gamma)
+    return WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 end
 
 @inline function reflect(panel::WakePanel)
@@ -436,10 +491,15 @@ end
     rtr = flipy(panel.rtl)
     rbl = flipy(panel.rbr)
     rbr = flipy(panel.rbl)
-    core_size = panel.core_size
+    core_size1 = panel.core_size1
     gamma = panel.gamma
+    age = panel.age
+    nu = panel.nu
+    oseen = panel.oseen
+    a1 = panel.a1
+    bq_s = panel.bq_s
 
-    return Ring(rtl, rtr, rbl, rbr, core_size, gamma)
+    return WakePanel(rtl, rtr, rbl, rbr, core_size1, gamma, age, nu, oseen, a1, bq_s)
 end
 
 """

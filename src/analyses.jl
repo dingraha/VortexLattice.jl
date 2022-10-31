@@ -115,6 +115,7 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
     lifting_line_analysis = false,
     viscous_lifting_line = false,
     drag_polar = nothing,
+    drag_alpha = nothing,
     prandtl_glauert = false,
     derivatives = true,
     re_correction = (cd, Re) -> cd)
@@ -128,6 +129,9 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
     end
     if viscous_lifting_line && (drag_polar === nothing)
         @error "viscous lifting line requires a drag polar"
+    end
+    if viscous_lifting_line && (drag_alpha === nothing)
+        @error "viscous lifting line requires a drag alpha polar"
     end
 
     # number of surfaces
@@ -248,7 +252,7 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
             # Do the lifting line stuff.
             lifting_line_forces!(lifting_line_properties, lifting_lines, properties, surfaces, ref)
             if viscous_lifting_line
-                lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, clmax, properties, surfaces, wakes,
+                lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, drag_alpha, clmax, properties, surfaces, wakes,
                     ref, fs, Γ;
                     additional_velocity = additional_velocity,
                     Vh = nothing,
@@ -351,6 +355,9 @@ each surface at each time step, and a vector of lifting line properties (see
     Defaults to `0.25`, indicating the lifting line will be constructed along the quarter chord
  - `re_correction`: function of the form `cd_corrected = re_correction(cd, Re)`, where `cd` is a local drag coefficient and `Re` a local Reynolds number based on chord.
  - `rotation_correction`: `CCBlade.RotationCorrection` object, or `nothing`.
+ - `oseen`: `length(system.surfaces)`-Vector of oseen coefficients. Set to zero to disable the finite core length growth model.
+ - `a1`: `length(system.surfaces)`-Vector of non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: `length(system.surfaces)`-Vector of circulation exponential decay factor. Set to zero for no decay.
 """
 unsteady_analysis
 
@@ -445,12 +452,16 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     lifting_line_analysis = false,
     viscous_lifting_line = false,
     drag_polar = nothing,
+    drag_alpha = nothing,
     clmax = Inf,
     derivatives = true,
     prandtl_glauert = false,
     unsteady_kj=true,
     re_correction = (cd, Re) -> cd,
-    rotation_correction = nothing)
+    rotation_correction = nothing,
+    oseen = fill(zero(eltype(system)), length(system.surfaces)),
+    a1 = fill(zero(eltype(system)), length(system.surfaces)),
+    bq_s = fill(zero(eltype(system)), length(system.surfaces)))
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -461,6 +472,9 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     end
     if (drag_polar === nothing) && viscous_lifting_line
         @error "viscous lifting line requires a drag polar"
+    end
+    if (drag_alpha === nothing) && viscous_lifting_line
+        @error "viscous lifting line requires a drag alpha polar"
     end
 
     # float number type
@@ -564,6 +578,7 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
 
     # # loop through all time steps
     for it = 1 : length(dt)
+        @show it
 
         first_step = it == 1
         last_step = it == length(dt)
@@ -585,9 +600,13 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 prandtl_glauert = prandtl_glauert,
                 unsteady_kj = unsteady_kj,
                 drag_polar = drag_polar,
+                drag_alpha = drag_alpha,
                 clmax = clmax,
                 re_correction = re_correction,
-                rotation_correction = rotation_correction)
+                rotation_correction = rotation_correction,
+                oseen = oseen,
+                a1 = a1,
+                bq_s = bq_s)
         else
             propagate_system!(system, fs[it], dt[it];
                 additional_velocity,
@@ -602,9 +621,13 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 prandtl_glauert = prandtl_glauert,
                 unsteady_kj = unsteady_kj,
                 drag_polar = drag_polar,
+                drag_alpha = drag_alpha,
                 clmax = clmax,
                 re_correction = re_correction,
-                rotation_correction = rotation_correction)
+                rotation_correction = rotation_correction,
+                oseen = oseen,
+                a1 = a1,
+                bq_s = bq_s)
         end
 
         # increment wake panel counter for each surface
@@ -673,6 +696,9 @@ unsteady vortex lattice method system of equations.
     the Kutta-Joukowski theorem should be used for the nearfield loading calculation.
  - `re_correction`: function of the form `cd_corrected = re_correction(cd, Re)`, where `cd` is a local drag coefficient and `Re` a local Reynolds number based on chord.
  - `rotation_correction`: `CCBlade.RotationCorrection` object, or `nothing`.
+ - `oseen`: `length(wake)`-Vector of oseen coefficients. Set to zero to disable the finite core length growth model.
+ - `a1`: `length(wake)`-Vector of non-dimensional scaling parameter for circulation's contribution to finite core length growth.
+ - `bq_s`: `length(wake)`-Vector of circulation exponential decay factor. Set to zero for no decay.
 """
 propagate_system!
 
@@ -691,12 +717,16 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     lifting_line_analysis,
     viscous_lifting_line = false,
     drag_polar = nothing,
+    drag_alpha = nothing,
     clmax = Inf,
     derivatives,
     prandtl_glauert,
     unsteady_kj,
     re_correction = (cd, Re) -> cd,
-    rotation_correction = nothing)
+    rotation_correction = nothing,
+    oseen = fill(zero(eltype(system)), length(surfaces)),
+    a1 = fill(zero(eltype(system)), length(surfaces)),
+    bq_s = fill(zero(eltype(system)), length(surfaces)))
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -707,6 +737,9 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     end
     if viscous_lifting_line && (drag_polar === nothing)
         @error "viscous lifting line requires a drag polar"
+    end
+    if viscous_lifting_line && (drag_alpha === nothing)
+        @error "viscous lifting line requires a drag alpha polar"
     end
 
     # NOTE: Each step models the transition from `t = t[it]` to `t = [it+1]`
@@ -866,7 +899,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
             lifting_line_forces!(lifting_line_properties, current_lifting_lines, properties, current_surfaces, ref)
             if viscous_lifting_line
                 lifting_line_viscous_forces!(lifting_line_properties,
-                    current_lifting_lines, drag_polar, clmax, properties,
+                    current_lifting_lines, drag_polar, drag_alpha, clmax, properties,
                     current_surfaces, wakes, ref, fs, Γ; additional_velocity,
                     Vh, symmetric, nwake, surface_id, wake_finite_core,
                     wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction)
@@ -890,7 +923,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
 
     # shed additional wake panel (and translate existing wake panels)
     shed_wake!(wakes, wake_shedding_locations, wake_velocities,
-        dt, current_surfaces, Γ, nwake)
+        dt, current_surfaces, Γ, nwake, fs.viscosity, oseen, a1, bq_s)
 
     return system
 end
