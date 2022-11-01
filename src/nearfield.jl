@@ -646,7 +646,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # get segment length and reference location
             ds = llp.ds
             # Get the unit vector pointing from the trailing edge to the leading edge.
-            # u_chord = llp.u_chord
+            u_chord = llp.u_chord
             rs = llp.r
             # rs = llp.r .+ 1.0*llp.c*[-1, 0, 0]
             # rs = llp.r .+ 0.5*llp.c*[-1, 0, 0]
@@ -679,7 +679,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             rrs = lifting_lines[isurf][j].rr
             span_dir = (rrs - rls)/ds
             # @show norm(span_dir)
-            u_chord = normalize(llp.u_chord - dot(llp.u_chord, span_dir)*span_dir)
+            # u_chord = normalize(llp.u_chord - dot(llp.u_chord, span_dir)*span_dir)
 
             # Now I want to know the lift force, which is the force in the
             # direction that's normal to both the local velocity and span_dir
@@ -854,21 +854,16 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             #     @show sign(dot(cross(u_chord, span_dir), drag_dir))
             # end
             alpha *= sign(dot(cross(u_chord, span_dir), drag_dir))
-            cdj_airfoil_from_alpha = drag_alpha(alpha)
-            cdj_airfoil_from_alpha = re_correction(cdj_airfoil_from_alpha, Re)
+            # cdj_airfoil_from_alpha = drag_alpha(alpha)
+            # cdj_airfoil_from_alpha = re_correction(cdj_airfoil_from_alpha, Re)
 
             # For phi, we want the direction the total velocity makes with the rotation plane.
             # That should be the angle the drag_dir makes with the tangential direction.
-            # phi = acos(dot(drag_dir, t_hat))
-
-            # Or another way:
-            phi = atan(dot(V, n_hat), dot(V, t_hat))
-            twist = atan(dot(-u_chord, n_hat), dot(-u_chord, t_hat))
-
-            alpha_from_twist = twist - phi
+            phi = acos(dot(drag_dir, t_hat))
+            # phi = atan(dot(drag_dir, n_hat), dot(drag_dir, t_hat))
 
             # alpha = twist - phi
-            phi_from_twist = twist - alpha
+            # phi_from_twist = twist - alpha
             # println("phi = $(phi*180/pi)°, phi_from_twist = $(phi_from_twist*180/pi)°")
             # println("alpha = $(alpha*180/pi)°, alpha_from_twist = $(alpha_from_twist*180/pi)°")
 
@@ -920,7 +915,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
                 deltacd = deltacl * (sin(phi) - 0.12*cos(phi))/(cos(phi) + 0.12*sin(phi))  # note that we can actually use phi instead of alpha as is done in airfoilprep.py b/c this is done at each iteration
                 # cd += deltacd
                 cdj_airfoil += deltacd
-                cdj_airfoil_from_alpha += deltacd
+                # cdj_airfoil_from_alpha += deltacd
 
                 clj_limited = clj_total - clj_airfoil
                 # println("after rc:  clj_total = $(clj_total), cdj_airfoil = $(cdj_airfoil)")
@@ -928,7 +923,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
 
             # Get the total viscous force.
             cfvj = (cdj_airfoil*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
-            cfvj_alpha = (cdj_airfoil_from_alpha*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
+            # cfvj_alpha = (cdj_airfoil_from_alpha*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
 
             # What do I do about the moment coefficient?
             # Nothing, since I'm assuming that the viscous load passes
@@ -936,7 +931,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # moment arm is zero.
             cmvj = zero(cfvj)
 
-            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmvj, u_chord, V/ref.V, V_fs/ref.V, V_rot/ref.V, V_add/ref.V, V_sm/ref.V, alpha, alpha_from_twist, phi, V_airfoil/ref.V, clj_total, cdj_airfoil, cdj_airfoil_from_alpha, cfvj_alpha)
+            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmvj, u_chord, V/ref.V, V_fs/ref.V, V_rot/ref.V, V_add/ref.V, V_sm/ref.V, alpha, zero(alpha), phi, V_airfoil/ref.V, clj_total, cdj_airfoil, zero(cdj_airfoil), zero(cfvj))
         end
     end
 end
@@ -1132,7 +1127,8 @@ function body_viscous_forces(lifting_line_properties, ref, fs, symmetric, frame,
             Δr = rs - ref.r
             # cf = @view cfv[isurf][:, j]
             if alpha
-                cf = lifting_line_properties[isurf][j].cfv_alpha
+                # cf = lifting_line_properties[isurf][j].cfv_alpha
+                error("cd from alpha not supported")
             else
                 cf = lifting_line_properties[isurf][j].cfv
             end
