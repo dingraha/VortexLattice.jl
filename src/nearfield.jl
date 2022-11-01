@@ -33,22 +33,27 @@ Calculate local panel forces in the body frame.
             rc = top_center(receiving[i])
 
             # freestream velocity
-            Vi = freestream_velocity(fs)
+            V_fs = freestream_velocity(fs)
 
             # rotational velocity
-            Vi += rotational_velocity(rc, fs, ref)
+            V_rot = rotational_velocity(rc, fs, ref)
 
             # additional velocity field
             if !isnothing(additional_velocity)
-                Vi += additional_velocity(rc)
+                V_add = additional_velocity(rc)
+            else
+                V_add = zero(V_fs)
             end
 
             # velocity due to surface motion
             if !isnothing(Vh)
-                Vi += Vh[isurf][i]
+                V_sm = Vh[isurf][i]
+            else
+                V_sm = zero(V_fs)
             end
 
             # induced velocity from surfaces and wakes
+            Vi = V_fs + V_rot + V_add + V_sm
             jΓ = 0 # index for accessing Γ
             for jsurf = 1:nsurf
 
@@ -120,8 +125,11 @@ Calculate local panel forces in the body frame.
             end
 
             if prandtl_glauert
+                # total velocity except for induced velocity
+                V_no_i = V_fs + V_rot + V_add + V_sm
+
                 # Prandtl-Glauert compressibility correction:
-                mach = norm(Vi)/fs.speedofsound
+                mach = norm(V_no_i)/fs.speedofsound
                 PG = 1/sqrt(1 - mach^2)
                 Fbi *= PG
             end

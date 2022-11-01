@@ -578,7 +578,6 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
 
     # # loop through all time steps
     for it = 1 : length(dt)
-        @show it
 
         first_step = it == 1
         last_step = it == length(dt)
