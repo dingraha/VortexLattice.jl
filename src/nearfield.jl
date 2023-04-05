@@ -638,7 +638,7 @@ function lifting_line_forces!(lifting_line_properties, lifting_lines, props, sur
     return lifting_line_properties
 end
 
-function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, drag_alpha, clmax, props, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction)
+function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, drag_polar, drag_alpha, clmax, props, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction, cp_offset)
     # number of surfaces
     nsurf = length(lifting_line_properties)
 
@@ -656,6 +656,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # Get the unit vector pointing from the trailing edge to the leading edge.
             u_chord = llp.u_chord
             rs = llp.r
+            # rs = llp.r .+ (cp_offset*llp.c).*u_chord
             # rs = llp.r .+ 1.0*llp.c*[-1, 0, 0]
             # rs = llp.r .+ 0.5*llp.c*[-1, 0, 0]
             # rs = llp.r .+ 0.25*llp.c*[-1, 0, 0]
@@ -667,9 +668,9 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # Get a unit vector in the direction of the lifting line's rotation.
             # Ah, actually, I want the opposite of that, since the velocity
             # `lifting_line_velocity` gives me is in the rotor frame, sort of.
-            TF = eltype(llp.r)
-            radii = sqrt(llp.r[2]^2 + llp.r[3]^2)
-            theta_hat = -SVector{3,TF}(zero(TF), -llp.r[3], llp.r[2])/radii
+            # TF = eltype(llp.r)
+            # radii = sqrt(llp.r[2]^2 + llp.r[3]^2)
+            # theta_hat = -SVector{3,TF}(zero(TF), -llp.r[3], llp.r[2])/radii
 
             # Get a unit vector in the direction of the freestream:
             # fs_hat = SVector{3,TF}(one(TF), zero(TF), zero(TF))
@@ -679,7 +680,8 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # println("radii should be $radii m")
 
             # calculate the local velocity for the current chordwise set of panels at the reference location
-            V, V_fs, V_rot, V_add, V_sm = lifting_line_velocity(isurf, j, rs, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
+            rs_cp = llp.r .+ (cp_offset*llp.c).*u_chord
+            V, V_fs, V_rot, V_add, V_sm = lifting_line_velocity(isurf, j, rs_cp, surfaces, wakes, ref, fs, Γ; additional_velocity, Vh, symmetric, nwake, surface_id, wake_finite_core, wake_shedding_locations, trailing_vortices, xhat)
             # @show V - (V_fs + V_sm)
 
             # normalized direction along the lifting line's length
@@ -727,9 +729,9 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # @show dot(V, span_dir)
 
             # So now I should be able to get the axial and tangential velocities.
-            Vx_lame = dot(V, fs_hat)
-            Vy_lame = dot(V, theta_hat)
-            omega = Vy_lame/radii
+            # Vx_lame = dot(V, fs_hat)
+            # Vy_lame = dot(V, theta_hat)
+            # omega = Vy_lame/radii
             # Rtip = 0.30479999999999996
             # println("radii/Rtip = $(radii/Rtip), Vx_lame = $(Vx_lame) m/s, Vy_lame = $(Vy_lame) m/s, twist = $(twist*180/pi) deg")
             # alpha_from_twist = twist - atan(Vx_lame, Vy_lame)
@@ -756,7 +758,11 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
 
             # Reynolds number correction.
             # First need a local Reynolds number based on chord.
-            Re = V_airfoil*llp.c/fs.viscosity
+            # Re = V_airfoil*llp.c/fs.viscosity
+            # Ignore induction like CCBlade.jl does.
+            V_no_ind = V_fs + V_rot + V_add + V_sm
+            # Re = dot(V_no_ind, drag_dir)*llp.c/fs.viscosity
+            Re = norm(V_no_ind)*llp.c/fs.viscosity
             # Then do the correction.
             cdj_airfoil = re_correction(cdj_airfoil, Re)
 
@@ -850,21 +856,15 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # So, let's find that.
             alpha = acos(dot(drag_dir, -u_chord))
             # OK, but what about a negative alpha?
-            # How could I tell if alpha was negative?
-            # I think this way.
-            # @show norm(u_chord) norm(span_dir) dot(u_chord, span_dir)
-            # if isapprox(span_dir[2], -1; atol=1e-3)
-            #     @show span_dir norm(span_dir)
-            #     @show drag_dir norm(drag_dir)
-            #     @show u_chord norm(u_chord)
-            #     @show cross(u_chord, span_dir)
-            #     @show dot(cross(u_chord, span_dir), drag_dir)
-            #     @show sign(dot(cross(u_chord, span_dir), drag_dir))
-            # end
-            alpha *= sign(dot(cross(u_chord, span_dir), drag_dir))
-            # cdj_airfoil_from_alpha = drag_alpha(alpha)
-            # cdj_airfoil_from_alpha = re_correction(cdj_airfoil_from_alpha, Re)
-
+            # Not sure how I could fix that.
+            # Something like this might work, but it depends on span_dir which
+            # is kind of arbitrary.
+            # But at the moment I'm using drag data that's symmetric about
+            # alpha=0, so it doesn't really matter.
+            # alpha *= sign(dot(cross(u_chord, span_dir), drag_dir))
+            cdj_airfoil_from_alpha = drag_alpha(alpha)
+            cdj_airfoil_from_alpha = re_correction(cdj_airfoil_from_alpha, Re)
+            
             # For phi, we want the direction the total velocity makes with the rotation plane.
             # That should be the angle the drag_dir makes with the tangential direction.
             phi = acos(dot(drag_dir, t_hat))
@@ -923,7 +923,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
                 deltacd = deltacl * (sin(phi) - 0.12*cos(phi))/(cos(phi) + 0.12*sin(phi))  # note that we can actually use phi instead of alpha as is done in airfoilprep.py b/c this is done at each iteration
                 # cd += deltacd
                 cdj_airfoil += deltacd
-                # cdj_airfoil_from_alpha += deltacd
+                cdj_airfoil_from_alpha += deltacd
 
                 clj_limited = clj_total - clj_airfoil
                 # println("after rc:  clj_total = $(clj_total), cdj_airfoil = $(cdj_airfoil)")
@@ -931,7 +931,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
 
             # Get the total viscous force.
             cfvj = (cdj_airfoil*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
-            # cfvj_alpha = (cdj_airfoil_from_alpha*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
+            cfvj_alpha = (cdj_airfoil_from_alpha*drag_dir + clj_limited*lift_dir) * V_airfoil^2/ref.V^2
 
             # What do I do about the moment coefficient?
             # Nothing, since I'm assuming that the viscous load passes
@@ -939,7 +939,7 @@ function lifting_line_viscous_forces!(lifting_line_properties, lifting_lines, dr
             # moment arm is zero.
             cmvj = zero(cfvj)
 
-            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmvj, u_chord, V/ref.V, V_fs/ref.V, V_rot/ref.V, V_add/ref.V, V_sm/ref.V, alpha, zero(alpha), phi, V_airfoil/ref.V, clj_total, cdj_airfoil, zero(cdj_airfoil), zero(cfvj))
+            lifting_line_properties[isurf][j] = LiftingLineProperties(llp.r, llp.c, llp.ds, llp.cf, cfvj, llp.cm, cmvj, u_chord, V/ref.V, V_fs/ref.V, V_rot/ref.V, V_add/ref.V, V_sm/ref.V, alpha, zero(alpha), phi, V_airfoil/ref.V, clj_total, cdj_airfoil, cdj_airfoil_from_alpha, cfvj_alpha)
         end
     end
 end

@@ -118,7 +118,8 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
     drag_alpha = nothing,
     prandtl_glauert = false,
     derivatives = true,
-    re_correction = (cd, Re) -> cd)
+    re_correction = (cd, Re) -> cd,
+    cp_offset = 0.0)
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -264,7 +265,8 @@ function steady_analysis!(system, surfaces::AbstractVector{<:AbstractMatrix{<:Su
                     trailing_vorticies = trailing_vorticies,
                     xhat = xhat,
                     re_correction = re_correction,
-                    rotation_correction = nothing)
+                    rotation_correction = nothing,
+                    cp_offset = cp_offset)
             end
         end
     end
@@ -358,6 +360,7 @@ each surface at each time step, and a vector of lifting line properties (see
  - `oseen`: `length(system.surfaces)`-Vector of oseen coefficients. Set to zero to disable the finite core length growth model.
  - `a1`: `length(system.surfaces)`-Vector of non-dimensional scaling parameter for circulation's contribution to finite core length growth.
  - `bq_s`: `length(system.surfaces)`-Vector of circulation exponential decay factor. Set to zero for no decay.
+ - `cp_offset`: factor displacing the control point for each spanwise station used in the viscous loading calculation.
 """
 unsteady_analysis
 
@@ -461,7 +464,8 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
     rotation_correction = nothing,
     oseen = fill(zero(eltype(system)), length(system.surfaces)),
     a1 = fill(zero(eltype(system)), length(system.surfaces)),
-    bq_s = fill(zero(eltype(system)), length(system.surfaces)))
+    bq_s = fill(zero(eltype(system)), length(system.surfaces)),
+    cp_offset = zero(eltype(system)))
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -605,7 +609,8 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 rotation_correction = rotation_correction,
                 oseen = oseen,
                 a1 = a1,
-                bq_s = bq_s)
+                bq_s = bq_s,
+                cp_offset = cp_offset)
         else
             propagate_system!(system, fs[it], dt[it];
                 additional_velocity,
@@ -626,7 +631,8 @@ function unsteady_analysis!(system, surfaces::Union{AbstractVector{<:AbstractMat
                 rotation_correction = rotation_correction,
                 oseen = oseen,
                 a1 = a1,
-                bq_s = bq_s)
+                bq_s = bq_s,
+                cp_offset = cp_offset)
         end
 
         # increment wake panel counter for each surface
@@ -698,6 +704,7 @@ unsteady vortex lattice method system of equations.
  - `oseen`: `length(wake)`-Vector of oseen coefficients. Set to zero to disable the finite core length growth model.
  - `a1`: `length(wake)`-Vector of non-dimensional scaling parameter for circulation's contribution to finite core length growth.
  - `bq_s`: `length(wake)`-Vector of circulation exponential decay factor. Set to zero for no decay.
+ - `cp_offset`: factor displacing the control point for each spanwise station.
 """
 propagate_system!
 
@@ -725,7 +732,8 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
     rotation_correction = nothing,
     oseen = fill(zero(eltype(system)), length(surfaces)),
     a1 = fill(zero(eltype(system)), length(surfaces)),
-    bq_s = fill(zero(eltype(system)), length(surfaces)))
+    bq_s = fill(zero(eltype(system)), length(surfaces)),
+    cp_offset = zero(eltype(system)))
 
     # This probably isn't the "right" way to throw an error.
     if lifting_line_analysis && !near_field_analysis
@@ -901,7 +909,7 @@ function propagate_system!(system, surfaces, lifting_lines, fs, dt;
                     current_lifting_lines, drag_polar, drag_alpha, clmax, properties,
                     current_surfaces, wakes, ref, fs, Γ; additional_velocity,
                     Vh, symmetric, nwake, surface_id, wake_finite_core,
-                    wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction)
+                    wake_shedding_locations, trailing_vortices, xhat, re_correction, rotation_correction, cp_offset)
             end
         end
 
